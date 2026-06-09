@@ -290,7 +290,8 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
 
   if (isGroup) return handleUserMessage(token, supabase, msg);
-  if (msg.from?.id !== adminId) return handleUserMessage(token, supabase, msg);
+  // Private chat: only admin allowed
+  if (msg.from?.id !== adminId) return;
 
   // -------- ADMIN --------
   const s = await loadState(supabase, chatId);

@@ -171,7 +171,10 @@ async function sendReply(
       message_id: res.result.message_id,
       delete_at: deleteAt,
     });
+  }
 }
+
+
 
 // Send one or many replies (handles both legacy single-object and new array shapes)
 async function sendReplies(

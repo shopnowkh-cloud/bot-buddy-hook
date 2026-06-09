@@ -430,11 +430,11 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
     }
 
     if (text === "✏️ កែ") {
-      await saveState(supabase, chatId, "waiting_reply", kw, null);
+      await saveState(supabase, chatId, "waiting_reply", kw, null, []);
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✏️ កែប្រែពាក្យ [${kw}]\n\nសូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ថ្មី ដែលចង់តប៖`,
-        reply_markup: CANCEL_KEYBOARD,
+        text: `✏️ កែប្រែពាក្យ [${kw}]\n\nសូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ថ្មី (អាចផ្ញើច្រើនបាន)។\nបន្ទាប់មកចុច ✅ រួចរាល់ ដើម្បីរក្សាទុក៖`,
+        reply_markup: REPLY_COLLECT_KEYBOARD,
       });
       return;
     }

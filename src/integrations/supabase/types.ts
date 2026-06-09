@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_state: {
+        Row: {
+          chat_id: number
+          pending_keyword: string | null
+          selected_keyword: string | null
+          state: string | null
+          updated_at: string
+        }
+        Insert: {
+          chat_id: number
+          pending_keyword?: string | null
+          selected_keyword?: string | null
+          state?: string | null
+          updated_at?: string
+        }
+        Update: {
+          chat_id?: number
+          pending_keyword?: string | null
+          selected_keyword?: string | null
+          state?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      bot_config: {
+        Row: {
+          delete_after_seconds: number
+          id: number
+          updated_at: string
+        }
+        Insert: {
+          delete_after_seconds?: number
+          id?: number
+          updated_at?: string
+        }
+        Update: {
+          delete_after_seconds?: number
+          id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pending_deletions: {
         Row: {
           chat_id: number
@@ -35,6 +77,27 @@ export type Database = {
           delete_at?: string
           id?: number
           message_id?: number
+        }
+        Relationships: []
+      }
+      replies: {
+        Row: {
+          content: Json
+          created_at: string
+          keyword: string
+          updated_at: string
+        }
+        Insert: {
+          content: Json
+          created_at?: string
+          keyword: string
+          updated_at?: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          keyword?: string
+          updated_at?: string
         }
         Relationships: []
       }

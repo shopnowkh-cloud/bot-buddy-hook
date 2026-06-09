@@ -1,4 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createHash, timingSafeEqual } from "crypto";
+
+function deriveWebhookToken(secret: string): string {
+  return createHash("sha256").update(secret).digest("hex");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  return aBuf.length === bBuf.length && timingSafeEqual(aBuf, bBuf);
+}
 
 // ============================================================================
 // Telegram Bot webhook — converted from long-polling bot.js

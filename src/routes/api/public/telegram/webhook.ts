@@ -509,7 +509,6 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         if (!safeEqual(provided, expectedToken)) {
           return new Response("Unauthorized", { status: 401 });
         }
-        }
 
         let update: any;
         try {

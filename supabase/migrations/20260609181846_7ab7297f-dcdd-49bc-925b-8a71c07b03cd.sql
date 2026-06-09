@@ -1,0 +1,1 @@
+ALTER TABLE public.admin_state ADD COLUMN IF NOT EXISTS pending_replies jsonb NOT NULL DEFAULT '[]'::jsonb;

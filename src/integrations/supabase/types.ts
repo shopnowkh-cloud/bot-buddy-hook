@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           chat_id: number
           pending_keyword: string | null
+          pending_replies: Json
           selected_keyword: string | null
           state: string | null
           updated_at: string
@@ -25,6 +26,7 @@ export type Database = {
         Insert: {
           chat_id: number
           pending_keyword?: string | null
+          pending_replies?: Json
           selected_keyword?: string | null
           state?: string | null
           updated_at?: string
@@ -32,6 +34,7 @@ export type Database = {
         Update: {
           chat_id?: number
           pending_keyword?: string | null
+          pending_replies?: Json
           selected_keyword?: string | null
           state?: string | null
           updated_at?: string

@@ -186,7 +186,6 @@ async function sendReplies(
     await sendReply(token, supabase, chatId, item, autoDeleteSeconds);
   }
 }
-}
 
 // ---------------------------------------------------------------------------
 // State helpers
@@ -194,10 +193,17 @@ async function sendReplies(
 async function loadState(supabase: any, chatId: number) {
   const { data } = await supabase
     .from("admin_state")
-    .select("state, pending_keyword, selected_keyword")
+    .select("state, pending_keyword, selected_keyword, pending_replies")
     .eq("chat_id", chatId)
     .maybeSingle();
-  return data ?? { state: null, pending_keyword: null, selected_keyword: null };
+  return (
+    data ?? {
+      state: null,
+      pending_keyword: null,
+      selected_keyword: null,
+      pending_replies: [],
+    }
+  );
 }
 
 async function saveState(
@@ -206,6 +212,7 @@ async function saveState(
   state: string | null,
   pendingKeyword: string | null,
   selectedKeyword: string | null,
+  pendingReplies: any[] = [],
 ) {
   await supabase
     .from("admin_state")
@@ -215,6 +222,7 @@ async function saveState(
         state,
         pending_keyword: pendingKeyword,
         selected_keyword: selectedKeyword,
+        pending_replies: pendingReplies,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "chat_id" },

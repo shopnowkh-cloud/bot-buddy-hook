@@ -171,7 +171,21 @@ async function sendReply(
       message_id: res.result.message_id,
       delete_at: deleteAt,
     });
+}
+
+// Send one or many replies (handles both legacy single-object and new array shapes)
+async function sendReplies(
+  token: string,
+  supabase: any,
+  chatId: number,
+  content: any,
+  autoDeleteSeconds: number,
+) {
+  const list = Array.isArray(content) ? content : [content];
+  for (const item of list) {
+    await sendReply(token, supabase, chatId, item, autoDeleteSeconds);
   }
+}
 }
 
 // ---------------------------------------------------------------------------

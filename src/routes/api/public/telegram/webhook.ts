@@ -504,9 +504,11 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         }
 
         // Verify Telegram secret token
-        const provided = request.headers.get("x-telegram-bot-api-secret-token");
-        if (provided !== expectedSecret) {
+        const expectedToken = deriveWebhookToken(expectedSecret);
+        const provided = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
+        if (!safeEqual(provided, expectedToken)) {
           return new Response("Unauthorized", { status: 401 });
+        }
         }
 
         let update: any;

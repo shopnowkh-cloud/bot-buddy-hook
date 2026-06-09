@@ -43,6 +43,11 @@ const CANCEL_KEYBOARD = {
   resize_keyboard: true,
 };
 
+const REPLY_COLLECT_KEYBOARD = {
+  keyboard: [["✅ រួចរាល់"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
 const ACTION_KEYBOARD = {
   keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["❌ បោះបង់"]],
   resize_keyboard: true,
@@ -169,16 +174,39 @@ async function sendReply(
   }
 }
 
+
+
+// Send one or many replies (handles both legacy single-object and new array shapes)
+async function sendReplies(
+  token: string,
+  supabase: any,
+  chatId: number,
+  content: any,
+  autoDeleteSeconds: number,
+) {
+  const list = Array.isArray(content) ? content : [content];
+  for (const item of list) {
+    await sendReply(token, supabase, chatId, item, autoDeleteSeconds);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // State helpers
 // ---------------------------------------------------------------------------
 async function loadState(supabase: any, chatId: number) {
   const { data } = await supabase
     .from("admin_state")
-    .select("state, pending_keyword, selected_keyword")
+    .select("state, pending_keyword, selected_keyword, pending_replies")
     .eq("chat_id", chatId)
     .maybeSingle();
-  return data ?? { state: null, pending_keyword: null, selected_keyword: null };
+  return (
+    data ?? {
+      state: null,
+      pending_keyword: null,
+      selected_keyword: null,
+      pending_replies: [],
+    }
+  );
 }
 
 async function saveState(
@@ -187,6 +215,7 @@ async function saveState(
   state: string | null,
   pendingKeyword: string | null,
   selectedKeyword: string | null,
+  pendingReplies: any[] = [],
 ) {
   await supabase
     .from("admin_state")
@@ -196,6 +225,7 @@ async function saveState(
         state,
         pending_keyword: pendingKeyword,
         selected_keyword: selectedKeyword,
+        pending_replies: pendingReplies,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "chat_id" },
@@ -248,7 +278,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
           chat_id: chatId,
           message_id: msg.message_id,
         }).catch(() => {});
-        await sendReply(token, supabase, chatId, match, cfg);
+        await sendReplies(token, supabase, chatId, match, cfg);
       }
     }
     return;
@@ -279,7 +309,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReply(token, supabase, chatId, match, cfg);
+      await sendReplies(token, supabase, chatId, match, cfg);
     }
   }
 }
@@ -398,16 +428,16 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         chat_id: chatId,
         text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]៖`,
       });
-      if (content) await sendReply(token, supabase, chatId, content, 0);
+      if (content) await sendReplies(token, supabase, chatId, content, 0);
       return;
     }
 
     if (text === "✏️ កែ") {
-      await saveState(supabase, chatId, "waiting_reply", kw, null);
+      await saveState(supabase, chatId, "waiting_reply", kw, null, []);
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✏️ កែប្រែពាក្យ [${kw}]\n\nសូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ថ្មី ដែលចង់តប៖`,
-        reply_markup: CANCEL_KEYBOARD,
+        text: `✏️ កែប្រែពាក្យ [${kw}]\n\nសូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ថ្មី (អាចផ្ញើច្រើនបាន)។\nបន្ទាប់មកចុច ✅ រួចរាល់ ដើម្បីរក្សាទុក៖`,
+        reply_markup: REPLY_COLLECT_KEYBOARD,
       });
       return;
     }
@@ -437,44 +467,68 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
   // Add keyword flow
   if (s.state === "waiting_keyword" && text) {
     const kw = text.trim().toLowerCase();
-    await saveState(supabase, chatId, "waiting_reply", kw, null);
+    await saveState(supabase, chatId, "waiting_reply", kw, null, []);
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
-      text: `✅ ទទួលពាក្យ: ${text.trim()}\n\nជំហានទី២: សូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ដែលចង់តប៖`,
-      reply_markup: CANCEL_KEYBOARD,
+      text: `✅ ទទួលពាក្យ: ${text.trim()}\n\nជំហានទី២: សូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង (អាចផ្ញើច្រើនបាន)។\nបន្ទាប់មកចុច ✅ រួចរាល់ ដើម្បីរក្សាទុក៖`,
+      reply_markup: REPLY_COLLECT_KEYBOARD,
     });
     return;
   }
 
   if (s.state === "waiting_reply") {
+    const collected: any[] = Array.isArray(s.pending_replies) ? s.pending_replies : [];
+    const kw = s.pending_keyword;
+    if (!kw) return;
+
+    // User finished collecting
+    if (text === "✅ រួចរាល់") {
+      if (collected.length === 0) {
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: "⚠️ មិនទាន់មានសារណាមួយទេ។ សូមផ្ញើយ៉ាងហោចណាស់មួយសារ មុនចុច ✅ រួចរាល់។",
+          reply_markup: REPLY_COLLECT_KEYBOARD,
+        });
+        return;
+      }
+      const finalContent = collected.length === 1 ? collected[0] : collected;
+      await supabase
+        .from("replies")
+        .upsert(
+          { keyword: kw, content: finalContent, updated_at: new Date().toISOString() },
+          { onConflict: "keyword" },
+        );
+
+      await saveState(supabase, chatId, null, null, null, []);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `🎉 រៀបចំរួចរាល់!\nពាក្យ [${kw}] នឹងបង្ហាញលទ្ធផល (${collected.length} សារ) ៖`,
+        reply_markup: MAIN_KEYBOARD,
+      });
+      await sendReplies(token, supabase, chatId, finalContent, 0);
+      return;
+    }
+
     const replyContent = getReplyContent(msg);
     if (!replyContent) {
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: "⚠️ មិនទទួលស្គាល់ប្រភេទនេះទេ។ សូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង។",
-        reply_markup: CANCEL_KEYBOARD,
+        reply_markup: REPLY_COLLECT_KEYBOARD,
       });
       return;
     }
 
-    const kw = s.pending_keyword;
-    if (!kw) return;
-    await supabase
-      .from("replies")
-      .upsert(
-        { keyword: kw, content: replyContent, updated_at: new Date().toISOString() },
-        { onConflict: "keyword" },
-      );
-
-    await saveState(supabase, chatId, null, null, null);
+    collected.push(replyContent);
+    await saveState(supabase, chatId, "waiting_reply", kw, null, collected);
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
-      text: `🎉 រៀបចំរួចរាល់!\nពាក្យ [${kw}] វានឹងបង្ហាញលទ្ធផលដែលបានបញ្ចូល៖`,
-      reply_markup: MAIN_KEYBOARD,
+      text: `📥 បានទទួលសារទី ${collected.length}។\nផ្ញើបន្ថែម ឬ ចុច ✅ រួចរាល់ ដើម្បីរក្សាទុក។`,
+      reply_markup: REPLY_COLLECT_KEYBOARD,
     });
-    await sendReply(token, supabase, chatId, replyContent, 0);
     return;
   }
+
 
   // Fallback: admin tests a keyword when no state is active
   if (!s.state && text) {
@@ -484,7 +538,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReply(token, supabase, chatId, match, 0);
+      await sendReplies(token, supabase, chatId, match, 0);
     }
   }
 }

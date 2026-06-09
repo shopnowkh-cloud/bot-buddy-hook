@@ -278,7 +278,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
           chat_id: chatId,
           message_id: msg.message_id,
         }).catch(() => {});
-        await sendReply(token, supabase, chatId, match, cfg);
+        await sendReplies(token, supabase, chatId, match, cfg);
       }
     }
     return;
@@ -309,7 +309,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReply(token, supabase, chatId, match, cfg);
+      await sendReplies(token, supabase, chatId, match, cfg);
     }
   }
 }
@@ -428,7 +428,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         chat_id: chatId,
         text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]៖`,
       });
-      if (content) await sendReply(token, supabase, chatId, content, 0);
+      if (content) await sendReplies(token, supabase, chatId, content, 0);
       return;
     }
 
@@ -538,7 +538,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReply(token, supabase, chatId, match, 0);
+      await sendReplies(token, supabase, chatId, match, 0);
     }
   }
 }

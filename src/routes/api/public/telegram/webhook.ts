@@ -1,0 +1,526 @@
+import { createFileRoute } from "@tanstack/react-router";
+
+// ============================================================================
+// Telegram Bot webhook — converted from long-polling bot.js
+// Endpoint: POST /api/public/telegram/webhook
+// Security: verifies X-Telegram-Bot-Api-Secret-Token header
+// State is persisted in Lovable Cloud (no in-memory globals).
+// ============================================================================
+
+type TgRequestBody = Record<string, unknown>;
+
+async function tgRequest(token: string, method: string, body: TgRequestBody) {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as { ok: boolean; result?: any; description?: string };
+}
+
+// ---------------------------------------------------------------------------
+// Keyboards (preserved from bot.js)
+// ---------------------------------------------------------------------------
+const MAIN_KEYBOARD = {
+  keyboard: [["បន្ថែមពាក្យថ្មី"], ["បញ្ជីពាក្យ កែប្រែ&លុប"], ["⏱ កំណត់ Timer លុបសារ"]],
+  resize_keyboard: true,
+  persistent: true,
+};
+
+const CANCEL_KEYBOARD = {
+  keyboard: [["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
+const ACTION_KEYBOARD = {
+  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
+const TIMER_KEYBOARD = {
+  keyboard: [
+    ["បិទ (មិនលុប)"],
+    ["10 វិ", "30 វិ", "1 នាទី"],
+    ["2 នាទី", "5 នាទី", "10 នាទី"],
+    ["❌ បោះបង់"],
+  ],
+  resize_keyboard: true,
+};
+
+function buildListKeyboard(keys: string[]) {
+  const rows: string[][] = [];
+  for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+  rows.push(["❌ បោះបង់"]);
+  return { keyboard: rows, resize_keyboard: true };
+}
+
+function formatDelay(seconds: number): string {
+  if (seconds === 0) return "បិទ (មិនលុប)";
+  if (seconds < 60) return `${seconds} វិនាទី`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m} នាទី ${s} វិនាទី` : `${m} នាទី`;
+}
+
+function parseTimerLabel(label: string | undefined): number | null {
+  if (!label) return null;
+  if (label === "បិទ (មិនលុប)") return 0;
+  if (label === "10 វិ") return 10;
+  if (label === "30 វិ") return 30;
+  if (label === "1 នាទី") return 60;
+  if (label === "2 នាទី") return 120;
+  if (label === "5 នាទី") return 300;
+  if (label === "10 នាទី") return 600;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Reply content extraction (same shape as bot.js)
+// ---------------------------------------------------------------------------
+type ReplyContent = {
+  type: "copy";
+  from_chat_id: number;
+  message_id: number;
+  forward: boolean;
+};
+
+function getReplyContent(msg: any): ReplyContent | null {
+  const isForwarded = !!(msg.forward_from || msg.forward_origin || msg.forward_from_chat);
+  const hasContent = !!(
+    msg.text ||
+    msg.photo ||
+    msg.video ||
+    msg.voice ||
+    msg.audio ||
+    msg.document ||
+    msg.sticker
+  );
+  if (hasContent) {
+    return {
+      type: "copy",
+      from_chat_id: msg.chat.id,
+      message_id: msg.message_id,
+      forward: isForwarded,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Send a stored reply and (optionally) schedule its auto-delete
+// ---------------------------------------------------------------------------
+async function sendReply(
+  token: string,
+  supabase: any,
+  chatId: number,
+  reply: any,
+  autoDeleteSeconds: number,
+) {
+  let res: any;
+  if (reply.type === "copy") {
+    const method = reply.forward ? "forwardMessage" : "copyMessage";
+    res = await tgRequest(token, method, {
+      chat_id: chatId,
+      from_chat_id: reply.from_chat_id,
+      message_id: reply.message_id,
+    });
+  } else if (reply.type === "text") {
+    res = await tgRequest(token, "sendMessage", { chat_id: chatId, text: reply.content });
+  } else if (reply.type === "photo") {
+    res = await tgRequest(token, "sendPhoto", {
+      chat_id: chatId,
+      photo: reply.content,
+      caption: reply.caption,
+    });
+  } else if (reply.type === "video") {
+    res = await tgRequest(token, "sendVideo", {
+      chat_id: chatId,
+      video: reply.content,
+      caption: reply.caption,
+    });
+  } else if (reply.type === "voice") {
+    res = await tgRequest(token, "sendVoice", { chat_id: chatId, voice: reply.content });
+  } else if (reply.type === "audio") {
+    res = await tgRequest(token, "sendAudio", {
+      chat_id: chatId,
+      audio: reply.content,
+      caption: reply.caption,
+    });
+  }
+
+  if (res?.ok && res.result?.message_id && autoDeleteSeconds > 0) {
+    const deleteAt = new Date(Date.now() + autoDeleteSeconds * 1000).toISOString();
+    await supabase.from("pending_deletions").insert({
+      chat_id: chatId,
+      message_id: res.result.message_id,
+      delete_at: deleteAt,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// State helpers
+// ---------------------------------------------------------------------------
+async function loadState(supabase: any, chatId: number) {
+  const { data } = await supabase
+    .from("admin_state")
+    .select("state, pending_keyword, selected_keyword")
+    .eq("chat_id", chatId)
+    .maybeSingle();
+  return data ?? { state: null, pending_keyword: null, selected_keyword: null };
+}
+
+async function saveState(
+  supabase: any,
+  chatId: number,
+  state: string | null,
+  pendingKeyword: string | null,
+  selectedKeyword: string | null,
+) {
+  await supabase
+    .from("admin_state")
+    .upsert(
+      {
+        chat_id: chatId,
+        state,
+        pending_keyword: pendingKeyword,
+        selected_keyword: selectedKeyword,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "chat_id" },
+    );
+}
+
+async function loadConfig(supabase: any): Promise<number> {
+  const { data } = await supabase
+    .from("bot_config")
+    .select("delete_after_seconds")
+    .eq("id", 1)
+    .maybeSingle();
+  return data?.delete_after_seconds ?? 0;
+}
+
+async function saveConfig(supabase: any, seconds: number) {
+  await supabase
+    .from("bot_config")
+    .upsert({ id: 1, delete_after_seconds: seconds, updated_at: new Date().toISOString() });
+}
+
+async function getReplyByKeyword(supabase: any, keyword: string) {
+  const { data } = await supabase
+    .from("replies")
+    .select("content")
+    .eq("keyword", keyword)
+    .maybeSingle();
+  return data?.content ?? null;
+}
+
+async function listKeywords(supabase: any): Promise<string[]> {
+  const { data } = await supabase.from("replies").select("keyword").order("created_at");
+  return (data ?? []).map((r: any) => r.keyword);
+}
+
+// ---------------------------------------------------------------------------
+// Main message handler — mirrors handleMessage / handleUserMessage in bot.js
+// ---------------------------------------------------------------------------
+async function handleUserMessage(token: string, supabase: any, msg: any) {
+  const chatId = msg.chat.id;
+  const text: string | undefined = msg.text;
+  const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+  const cfg = await loadConfig(supabase);
+
+  if (isGroup) {
+    if (text) {
+      const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
+      if (match) {
+        await tgRequest(token, "deleteMessage", {
+          chat_id: chatId,
+          message_id: msg.message_id,
+        }).catch(() => {});
+        await sendReply(token, supabase, chatId, match, cfg);
+      }
+    }
+    return;
+  }
+
+  const isStart = text === "/start" || text?.startsWith("/start@");
+
+  if (isStart) {
+    const keys = await listKeywords(supabase);
+    if (keys.length === 0) {
+      await tgRequest(token, "sendMessage", { chat_id: chatId, text: "សួស្តី! 👋" });
+      return;
+    }
+    const rows: string[][] = [];
+    for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
+      reply_markup: { keyboard: rows, resize_keyboard: true },
+    });
+    return;
+  }
+
+  if (text) {
+    const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
+    if (match) {
+      await tgRequest(token, "deleteMessage", {
+        chat_id: chatId,
+        message_id: msg.message_id,
+      }).catch(() => {});
+      await sendReply(token, supabase, chatId, match, cfg);
+    }
+  }
+}
+
+async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
+  const chatId = msg.chat.id;
+  const text: string | undefined = msg.text;
+  const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+
+  if (isGroup) return handleUserMessage(token, supabase, msg);
+  if (msg.from?.id !== adminId) return handleUserMessage(token, supabase, msg);
+
+  // -------- ADMIN --------
+  const s = await loadState(supabase, chatId);
+
+  if (text === "/start" || text === "❌ បោះបង់") {
+    await saveState(supabase, chatId, null, null, null);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "👨‍💻 ផ្ទាំងគ្រប់គ្រង Auto-Reply Bot\n\nសួស្ដីម្ចាស់គណនី សូមជ្រើសរើសមុខងារខាងក្រោម៖",
+      reply_markup: MAIN_KEYBOARD,
+    });
+    return;
+  }
+
+  if (text === "⏱ កំណត់ Timer លុបសារ") {
+    await saveState(supabase, chatId, "setting_timer", null, null);
+    const cfg = await loadConfig(supabase);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `⏱ កំណត់ Timer លុបសារលទ្ធផលដោយស្វ័យប្រវត្តិ\n\n⚙️ ស្ថានភាពបច្ចុប្បន្ន: ${formatDelay(cfg)}\n\nសូមជ្រើសរើសរយៈពេល ឬ វាយលេខវិនាទី (ឧ: 45):`,
+      reply_markup: TIMER_KEYBOARD,
+    });
+    return;
+  }
+
+  if (s.state === "setting_timer") {
+    const preset = parseTimerLabel(text);
+    let seconds: number | null = null;
+    if (preset !== null) seconds = preset;
+    else if (text && /^\d+$/.test(text.trim())) seconds = parseInt(text.trim(), 10);
+
+    if (seconds !== null) {
+      await saveConfig(supabase, seconds);
+      await saveState(supabase, chatId, null, null, null);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text:
+          seconds === 0
+            ? "✅ បានបិទ Timer — សារលទ្ធផលនឹងមិនត្រូវបានលុបទេ។"
+            : `✅ បានកំណត់ Timer — សារលទ្ធផលនឹងត្រូវបានលុបបន្ទាប់ពី ${formatDelay(seconds)}។`,
+        reply_markup: MAIN_KEYBOARD,
+      });
+      return;
+    }
+
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ សូមជ្រើសរើសពីប៊ូតុង ឬ វាយចំនួនវិនាទីជាលេខ (ឧ: 45)។",
+      reply_markup: TIMER_KEYBOARD,
+    });
+    return;
+  }
+
+  if (text === "បន្ថែមពាក្យថ្មី") {
+    await saveState(supabase, chatId, "waiting_keyword", null, null);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "🛠 ប្រព័ន្ធបន្ថែមពាក្យឆ្លើយតប\n\nជំហានទី១: សូមវាយ ពាក្យគន្លឹះ\n\n💡 ឧទាហរណ៍៖ សុំ qr, qr aba, qr code",
+      reply_markup: CANCEL_KEYBOARD,
+    });
+    return;
+  }
+
+  if (text === "បញ្ជីពាក្យ កែប្រែ&លុប") {
+    const keys = await listKeywords(supabase);
+    if (keys.length === 0) {
+      await saveState(supabase, chatId, null, null, null);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "📭 មិនទាន់មានពាក្យណាមួយទេ។ សូមបន្ថែមពាក្យថ្មីជាមុនសិន។",
+        reply_markup: MAIN_KEYBOARD,
+      });
+      return;
+    }
+    await saveState(supabase, chatId, "browsing_list", null, null);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
+      reply_markup: buildListKeyboard(keys),
+    });
+    return;
+  }
+
+  // Browsing list — user tapped a keyword
+  if (s.state === "browsing_list" && text) {
+    const kw = text.trim().toLowerCase();
+    const existing = await getReplyByKeyword(supabase, kw);
+    if (!existing) return;
+    await saveState(supabase, chatId, "keyword_action", null, kw);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `📝 ពាក្យ: [${kw}]\n\nសូមជ្រើសរើសសកម្មភាព៖`,
+      reply_markup: ACTION_KEYBOARD,
+    });
+    return;
+  }
+
+  // Action on selected keyword
+  if (s.state === "keyword_action" && s.selected_keyword) {
+    const kw = s.selected_keyword;
+    if (text === "👁 មើល") {
+      const content = await getReplyByKeyword(supabase, kw);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]៖`,
+      });
+      if (content) await sendReply(token, supabase, chatId, content, 0);
+      return;
+    }
+
+    if (text === "✏️ កែ") {
+      await saveState(supabase, chatId, "waiting_reply", kw, null);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `✏️ កែប្រែពាក្យ [${kw}]\n\nសូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ថ្មី ដែលចង់តប៖`,
+        reply_markup: CANCEL_KEYBOARD,
+      });
+      return;
+    }
+
+    if (text === "🗑 លុប") {
+      await supabase.from("replies").delete().eq("keyword", kw);
+      const keys = await listKeywords(supabase);
+      if (keys.length === 0) {
+        await saveState(supabase, chatId, null, null, null);
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: `🗑 បានលុបពាក្យ [${kw}] រួចរាល់។\n\n📭 មិនទាន់មានពាក្យណាមួយទេ។`,
+          reply_markup: MAIN_KEYBOARD,
+        });
+      } else {
+        await saveState(supabase, chatId, "browsing_list", null, null);
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: `🗑 បានលុបពាក្យ [${kw}] រួចរាល់។\n\n📋 បញ្ជីពាក្យ (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
+          reply_markup: buildListKeyboard(keys),
+        });
+      }
+      return;
+    }
+  }
+
+  // Add keyword flow
+  if (s.state === "waiting_keyword" && text) {
+    const kw = text.trim().toLowerCase();
+    await saveState(supabase, chatId, "waiting_reply", kw, null);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `✅ ទទួលពាក្យ: ${text.trim()}\n\nជំហានទី២: សូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង ដែលចង់តប៖`,
+      reply_markup: CANCEL_KEYBOARD,
+    });
+    return;
+  }
+
+  if (s.state === "waiting_reply") {
+    const replyContent = getReplyContent(msg);
+    if (!replyContent) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⚠️ មិនទទួលស្គាល់ប្រភេទនេះទេ។ សូមផ្ញើ អក្សរ, រូបភាព, វីដេអូ ឬ សំឡេង។",
+        reply_markup: CANCEL_KEYBOARD,
+      });
+      return;
+    }
+
+    const kw = s.pending_keyword;
+    if (!kw) return;
+    await supabase
+      .from("replies")
+      .upsert(
+        { keyword: kw, content: replyContent, updated_at: new Date().toISOString() },
+        { onConflict: "keyword" },
+      );
+
+    await saveState(supabase, chatId, null, null, null);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `🎉 រៀបចំរួចរាល់!\nពាក្យ [${kw}] វានឹងបង្ហាញលទ្ធផលដែលបានបញ្ចូល៖`,
+      reply_markup: MAIN_KEYBOARD,
+    });
+    await sendReply(token, supabase, chatId, replyContent, 0);
+    return;
+  }
+
+  // Fallback: admin tests a keyword when no state is active
+  if (!s.state && text) {
+    const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
+    if (match) {
+      await tgRequest(token, "deleteMessage", {
+        chat_id: chatId,
+        message_id: msg.message_id,
+      }).catch(() => {});
+      await sendReply(token, supabase, chatId, match, 0);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Route
+// ---------------------------------------------------------------------------
+export const Route = createFileRoute("/api/public/telegram/webhook")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        const adminId = Number(process.env.ADMIN_CHAT_ID);
+        const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+        if (!token || !adminId || !expectedSecret) {
+          return new Response("Bot not configured", { status: 500 });
+        }
+
+        // Verify Telegram secret token
+        const provided = request.headers.get("x-telegram-bot-api-secret-token");
+        if (provided !== expectedSecret) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
+        let update: any;
+        try {
+          update = await request.json();
+        } catch {
+          return new Response("Bad request", { status: 400 });
+        }
+
+        // Always 200 OK quickly so Telegram doesn't retry
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const msg = update.message ?? update.edited_message;
+          if (msg?.chat?.id) {
+            await handleMessage(token, adminId, supabaseAdmin, msg);
+          }
+        } catch (err) {
+          console.error("Telegram webhook error:", err);
+        }
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    },
+  },
+});

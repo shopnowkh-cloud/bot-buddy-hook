@@ -43,6 +43,11 @@ const CANCEL_KEYBOARD = {
   resize_keyboard: true,
 };
 
+const REPLY_COLLECT_KEYBOARD = {
+  keyboard: [["✅ រួចរាល់"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
 const ACTION_KEYBOARD = {
   keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["❌ បោះបង់"]],
   resize_keyboard: true,

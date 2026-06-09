@@ -14,7 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      pending_deletions: {
+        Row: {
+          chat_id: number
+          created_at: string
+          delete_at: string
+          id: number
+          message_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          delete_at: string
+          id?: number
+          message_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          delete_at?: string
+          id?: number
+          message_id?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -49,12 +49,23 @@ const REPLY_COLLECT_KEYBOARD = {
 };
 
 const ACTION_KEYBOARD = {
-  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["❌ បោះបង់"]],
+  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer"], ["❌ បោះបង់"]],
   resize_keyboard: true,
 };
 
 const TIMER_KEYBOARD = {
   keyboard: [
+    ["បិទ (មិនលុប)"],
+    ["10 វិ", "30 វិ", "1 នាទី"],
+    ["2 នាទី", "5 នាទី", "10 នាទី"],
+    ["❌ បោះបង់"],
+  ],
+  resize_keyboard: true,
+};
+
+const KEYWORD_TIMER_KEYBOARD = {
+  keyboard: [
+    ["🌐 ប្រើ Timer សកល"],
     ["បិទ (មិនលុប)"],
     ["10 វិ", "30 វិ", "1 នាទី"],
     ["2 នាទី", "5 នាទី", "10 នាទី"],
@@ -250,10 +261,11 @@ async function saveConfig(supabase: any, seconds: number) {
 async function getReplyByKeyword(supabase: any, keyword: string) {
   const { data } = await supabase
     .from("replies")
-    .select("content")
+    .select("content, delete_after_seconds")
     .eq("keyword", keyword)
     .maybeSingle();
-  return data?.content ?? null;
+  if (!data) return null;
+  return { content: data.content, delete_after_seconds: data.delete_after_seconds as number | null };
 }
 
 async function listKeywords(supabase: any): Promise<string[]> {
@@ -278,7 +290,8 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
           chat_id: chatId,
           message_id: msg.message_id,
         }).catch(() => {});
-        await sendReplies(token, supabase, chatId, match, cfg);
+        const effective = match.delete_after_seconds ?? cfg;
+        await sendReplies(token, supabase, chatId, match.content, effective);
       }
     }
     return;
@@ -309,7 +322,8 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReplies(token, supabase, chatId, match, cfg);
+      const effective = match.delete_after_seconds ?? cfg;
+      await sendReplies(token, supabase, chatId, match.content, effective);
     }
   }
 }
@@ -375,6 +389,42 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
     return;
   }
 
+  if (s.state === "setting_keyword_timer" && s.selected_keyword) {
+    const kw = s.selected_keyword;
+    let newVal: number | null | undefined = undefined; // undefined = invalid
+    if (text === "🌐 ប្រើ Timer សកល") newVal = null;
+    else {
+      const preset = parseTimerLabel(text);
+      if (preset !== null) newVal = preset;
+      else if (text && /^\d+$/.test(text.trim())) newVal = parseInt(text.trim(), 10);
+    }
+
+    if (newVal !== undefined) {
+      await supabase
+        .from("replies")
+        .update({ delete_after_seconds: newVal, updated_at: new Date().toISOString() })
+        .eq("keyword", kw);
+      await saveState(supabase, chatId, "keyword_action", null, kw);
+      const cfg = await loadConfig(supabase);
+      const label =
+        newVal === null ? `🌐 Timer សកល (${formatDelay(cfg)})` : formatDelay(newVal);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `✅ បានកំណត់ Timer សម្រាប់ [${kw}]: ${label}`,
+        reply_markup: ACTION_KEYBOARD,
+      });
+      return;
+    }
+
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ សូមជ្រើសរើសពីប៊ូតុង ឬ វាយចំនួនវិនាទីជាលេខ (ឧ: 45)។",
+      reply_markup: KEYWORD_TIMER_KEYBOARD,
+    });
+    return;
+  }
+
+
   if (text === "បន្ថែមពាក្យថ្មី") {
     await saveState(supabase, chatId, "waiting_keyword", null, null);
     await tgRequest(token, "sendMessage", {
@@ -423,12 +473,34 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
   if (s.state === "keyword_action" && s.selected_keyword) {
     const kw = s.selected_keyword;
     if (text === "👁 មើល") {
-      const content = await getReplyByKeyword(supabase, kw);
+      const existing = await getReplyByKeyword(supabase, kw);
+      const cfg = await loadConfig(supabase);
+      const eff = existing?.delete_after_seconds ?? cfg;
+      const label =
+        existing?.delete_after_seconds === null || existing?.delete_after_seconds === undefined
+          ? `🌐 ប្រើ Timer សកល (${formatDelay(cfg)})`
+          : formatDelay(existing.delete_after_seconds);
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]៖`,
+        text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]\n⏱ Timer: ${label}\n🕒 រយៈពេលលុបជាក់ស្តែង: ${formatDelay(eff)}`,
       });
-      if (content) await sendReplies(token, supabase, chatId, content, 0);
+      if (existing) await sendReplies(token, supabase, chatId, existing.content, 0);
+      return;
+    }
+
+    if (text === "⏱ Timer") {
+      const existing = await getReplyByKeyword(supabase, kw);
+      const cfg = await loadConfig(supabase);
+      const current =
+        existing?.delete_after_seconds === null || existing?.delete_after_seconds === undefined
+          ? `🌐 ប្រើ Timer សកល (${formatDelay(cfg)})`
+          : formatDelay(existing?.delete_after_seconds ?? 0);
+      await saveState(supabase, chatId, "setting_keyword_timer", null, kw);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `⏱ កំណត់ Timer លុបសារសម្រាប់ពាក្យ [${kw}]\n\n⚙️ បច្ចុប្បន្ន: ${current}\n\nសូមជ្រើសរើស ឬ វាយចំនួនវិនាទី (ឧ: 45):`,
+        reply_markup: KEYWORD_TIMER_KEYBOARD,
+      });
       return;
     }
 
@@ -538,7 +610,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReplies(token, supabase, chatId, match, 0);
+      await sendReplies(token, supabase, chatId, match.content, 0);
     }
   }
 }

@@ -65,7 +65,7 @@ const TIMER_KEYBOARD = {
 
 const KEYWORD_TIMER_KEYBOARD = {
   keyboard: [
-    ["🌐 ប្រើ Timer សកល"],
+    
     ["បិទ (មិនលុប)"],
     ["10 វិ", "30 វិ", "1 នាទី"],
     ["2 នាទី", "5 នាទី", "10 នាទី"],

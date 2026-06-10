@@ -65,7 +65,7 @@ const TIMER_KEYBOARD = {
 
 const KEYWORD_TIMER_KEYBOARD = {
   keyboard: [
-    ["🌐 ប្រើ Timer សកល"],
+    
     ["បិទ (មិនលុប)"],
     ["10 វិ", "30 វិ", "1 នាទី"],
     ["2 នាទី", "5 នាទី", "10 នាទី"],
@@ -391,13 +391,10 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
 
   if (s.state === "setting_keyword_timer" && s.selected_keyword) {
     const kw = s.selected_keyword;
-    let newVal: number | null | undefined = undefined; // undefined = invalid
-    if (text === "🌐 ប្រើ Timer សកល") newVal = null;
-    else {
-      const preset = parseTimerLabel(text);
-      if (preset !== null) newVal = preset;
-      else if (text && /^\d+$/.test(text.trim())) newVal = parseInt(text.trim(), 10);
-    }
+    let newVal: number | undefined = undefined; // undefined = invalid
+    const preset = parseTimerLabel(text);
+    if (preset !== null) newVal = preset;
+    else if (text && /^\d+$/.test(text.trim())) newVal = parseInt(text.trim(), 10);
 
     if (newVal !== undefined) {
       await supabase
@@ -405,12 +402,10 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         .update({ delete_after_seconds: newVal, updated_at: new Date().toISOString() })
         .eq("keyword", kw);
       await saveState(supabase, chatId, "keyword_action", null, kw);
-      const cfg = await loadConfig(supabase);
-      const label =
-        newVal === null ? `🌐 Timer សកល (${formatDelay(cfg)})` : formatDelay(newVal);
+      const label = newVal === 0 ? "បិទ (មិនលុប)" : `លុបក្នុង ${formatDelay(newVal)}`;
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✅ បានកំណត់ Timer សម្រាប់ [${kw}]: ${label}`,
+        text: `✅ បានកំណត់ Timer សម្រាប់ [${kw}]\n⏱ ${label}`,
         reply_markup: ACTION_KEYBOARD,
       });
       return;
@@ -461,9 +456,13 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
     const existing = await getReplyByKeyword(supabase, kw);
     if (!existing) return;
     await saveState(supabase, chatId, "keyword_action", null, kw);
+    const cfg = await loadConfig(supabase);
+    const eff = existing.delete_after_seconds ?? cfg;
+    const timerLabel =
+      eff === 0 ? "បិទ (មិនលុប)" : `លុបក្នុង ${formatDelay(eff)}`;
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
-      text: `📝 ពាក្យ: [${kw}]\n\nសូមជ្រើសរើសសកម្មភាព៖`,
+      text: `📝 ពាក្យ: [${kw}]\n⏱ Timer បច្ចុប្បន្ន: ${timerLabel}\n\nសូមជ្រើសរើសសកម្មភាព៖`,
       reply_markup: ACTION_KEYBOARD,
     });
     return;
@@ -476,13 +475,10 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
       const existing = await getReplyByKeyword(supabase, kw);
       const cfg = await loadConfig(supabase);
       const eff = existing?.delete_after_seconds ?? cfg;
-      const label =
-        existing?.delete_after_seconds === null || existing?.delete_after_seconds === undefined
-          ? `🌐 ប្រើ Timer សកល (${formatDelay(cfg)})`
-          : formatDelay(existing.delete_after_seconds);
+      const label = eff === 0 ? "បិទ (មិនលុប)" : `លុបក្នុង ${formatDelay(eff)}`;
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]\n⏱ Timer: ${label}\n🕒 រយៈពេលលុបជាក់ស្តែង: ${formatDelay(eff)}`,
+        text: `👁 ការឆ្លើយតបសម្រាប់ [${kw}]\n⏱ ${label}`,
       });
       if (existing) await sendReplies(token, supabase, chatId, existing.content, 0);
       return;
@@ -491,10 +487,8 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
     if (text === "⏱ Timer") {
       const existing = await getReplyByKeyword(supabase, kw);
       const cfg = await loadConfig(supabase);
-      const current =
-        existing?.delete_after_seconds === null || existing?.delete_after_seconds === undefined
-          ? `🌐 ប្រើ Timer សកល (${formatDelay(cfg)})`
-          : formatDelay(existing?.delete_after_seconds ?? 0);
+      const eff = existing?.delete_after_seconds ?? cfg;
+      const current = eff === 0 ? "បិទ (មិនលុប)" : `លុបក្នុង ${formatDelay(eff)}`;
       await saveState(supabase, chatId, "setting_keyword_timer", null, kw);
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,

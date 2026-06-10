@@ -389,6 +389,42 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
     return;
   }
 
+  if (s.state === "setting_keyword_timer" && s.selected_keyword) {
+    const kw = s.selected_keyword;
+    let newVal: number | null | undefined = undefined; // undefined = invalid
+    if (text === "🌐 ប្រើ Timer សកល") newVal = null;
+    else {
+      const preset = parseTimerLabel(text);
+      if (preset !== null) newVal = preset;
+      else if (text && /^\d+$/.test(text.trim())) newVal = parseInt(text.trim(), 10);
+    }
+
+    if (newVal !== undefined) {
+      await supabase
+        .from("replies")
+        .update({ delete_after_seconds: newVal, updated_at: new Date().toISOString() })
+        .eq("keyword", kw);
+      await saveState(supabase, chatId, "keyword_action", null, kw);
+      const cfg = await loadConfig(supabase);
+      const label =
+        newVal === null ? `🌐 Timer សកល (${formatDelay(cfg)})` : formatDelay(newVal);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `✅ បានកំណត់ Timer សម្រាប់ [${kw}]: ${label}`,
+        reply_markup: ACTION_KEYBOARD,
+      });
+      return;
+    }
+
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ សូមជ្រើសរើសពីប៊ូតុង ឬ វាយចំនួនវិនាទីជាលេខ (ឧ: 45)។",
+      reply_markup: KEYWORD_TIMER_KEYBOARD,
+    });
+    return;
+  }
+
+
   if (text === "បន្ថែមពាក្យថ្មី") {
     await saveState(supabase, chatId, "waiting_keyword", null, null);
     await tgRequest(token, "sendMessage", {

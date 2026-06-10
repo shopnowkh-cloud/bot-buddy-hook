@@ -63,6 +63,17 @@ const TIMER_KEYBOARD = {
   resize_keyboard: true,
 };
 
+const KEYWORD_TIMER_KEYBOARD = {
+  keyboard: [
+    ["🌐 ប្រើ Timer សកល"],
+    ["បិទ (មិនលុប)"],
+    ["10 វិ", "30 វិ", "1 នាទី"],
+    ["2 នាទី", "5 នាទី", "10 នាទី"],
+    ["❌ បោះបង់"],
+  ],
+  resize_keyboard: true,
+};
+
 function buildListKeyboard(keys: string[]) {
   const rows: string[][] = [];
   for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));

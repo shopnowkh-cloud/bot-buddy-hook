@@ -290,7 +290,8 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
           chat_id: chatId,
           message_id: msg.message_id,
         }).catch(() => {});
-        await sendReplies(token, supabase, chatId, match, cfg);
+        const effective = match.delete_after_seconds ?? cfg;
+        await sendReplies(token, supabase, chatId, match.content, effective);
       }
     }
     return;

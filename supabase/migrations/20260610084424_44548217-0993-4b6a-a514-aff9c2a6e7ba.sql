@@ -1,0 +1,1 @@
+ALTER TABLE public.replies ADD COLUMN IF NOT EXISTS delete_after_seconds integer;

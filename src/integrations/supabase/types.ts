@@ -87,18 +87,21 @@ export type Database = {
         Row: {
           content: Json
           created_at: string
+          delete_after_seconds: number | null
           keyword: string
           updated_at: string
         }
         Insert: {
           content: Json
           created_at?: string
+          delete_after_seconds?: number | null
           keyword: string
           updated_at?: string
         }
         Update: {
           content?: Json
           created_at?: string
+          delete_after_seconds?: number | null
           keyword?: string
           updated_at?: string
         }

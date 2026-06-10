@@ -49,7 +49,7 @@ const REPLY_COLLECT_KEYBOARD = {
 };
 
 const ACTION_KEYBOARD = {
-  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["❌ បោះបង់"]],
+  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer"], ["❌ បោះបង់"]],
   resize_keyboard: true,
 };
 

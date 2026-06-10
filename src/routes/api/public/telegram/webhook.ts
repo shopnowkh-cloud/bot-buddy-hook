@@ -261,10 +261,11 @@ async function saveConfig(supabase: any, seconds: number) {
 async function getReplyByKeyword(supabase: any, keyword: string) {
   const { data } = await supabase
     .from("replies")
-    .select("content")
+    .select("content, delete_after_seconds")
     .eq("keyword", keyword)
     .maybeSingle();
-  return data?.content ?? null;
+  if (!data) return null;
+  return { content: data.content, delete_after_seconds: data.delete_after_seconds as number | null };
 }
 
 async function listKeywords(supabase: any): Promise<string[]> {

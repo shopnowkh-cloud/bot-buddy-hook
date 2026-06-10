@@ -610,7 +610,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         chat_id: chatId,
         message_id: msg.message_id,
       }).catch(() => {});
-      await sendReplies(token, supabase, chatId, match, 0);
+      await sendReplies(token, supabase, chatId, match.content, 0);
     }
   }
 }

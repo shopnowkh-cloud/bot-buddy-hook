@@ -146,6 +146,7 @@ function MiniApp() {
         <TabsContent value="timer" className="mt-3"><TimerPanel /></TabsContent>
         <TabsContent value="pending" className="mt-3"><PendingPanel /></TabsContent>
       </Tabs>
+      <Toaster />
     </div>
   );
 }

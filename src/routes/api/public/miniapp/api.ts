@@ -2,13 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { verifyInitData } from "@/lib/telegram-initdata.server";
+import type { Database } from "@/integrations/supabase/types";
 
 const ADMIN_ID = 5002402843;
 
-let _supabase: ReturnType<typeof createClient> | null = null;
+let _supabase: ReturnType<typeof createClient<Database>> | null = null;
 function sb() {
   if (!_supabase) {
-    _supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    _supabase = createClient<Database>(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }

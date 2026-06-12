@@ -20,6 +20,15 @@ function safeEqual(a: string, b: string): boolean {
 
 type TgRequestBody = Record<string, unknown>;
 
+// Cache the admin client module load across requests (warm isolate) for lower latency
+let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null = null;
+function getAdminClient() {
+  if (!_adminClientPromise) {
+    _adminClientPromise = import("@/integrations/supabase/client.server");
+  }
+  return _adminClientPromise;
+}
+
 async function tgRequest(token: string, method: string, body: TgRequestBody) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",

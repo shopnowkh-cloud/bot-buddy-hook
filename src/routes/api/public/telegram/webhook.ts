@@ -600,11 +600,14 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
   if (!s.state && text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      await tgRequest(token, "deleteMessage", {
-        chat_id: chatId,
-        message_id: msg.message_id,
-      }).catch(() => {});
-      await sendReplies(token, supabase, chatId, match.content, 0);
+      // Parallelize delete + send for the fastest user-visible response
+      await Promise.all([
+        tgRequest(token, "deleteMessage", {
+          chat_id: chatId,
+          message_id: msg.message_id,
+        }).catch(() => {}),
+        sendReplies(token, supabase, chatId, match.content, 0),
+      ]);
     }
   }
 }

@@ -652,7 +652,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
         // Always 200 OK quickly so Telegram doesn't retry
         try {
-          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { supabaseAdmin } = await getAdminClient();
           const msg = update.message ?? update.edited_message;
           if (msg?.chat?.id) {
             await handleMessage(token, adminId, supabaseAdmin, msg);

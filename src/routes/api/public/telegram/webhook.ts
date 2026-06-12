@@ -20,6 +20,15 @@ function safeEqual(a: string, b: string): boolean {
 
 type TgRequestBody = Record<string, unknown>;
 
+// Cache the admin client module load across requests (warm isolate) for lower latency
+let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null = null;
+function getAdminClient() {
+  if (!_adminClientPromise) {
+    _adminClientPromise = import("@/integrations/supabase/client.server");
+  }
+  return _adminClientPromise;
+}
+
 async function tgRequest(token: string, method: string, body: TgRequestBody) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
@@ -600,11 +609,14 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
   if (!s.state && text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      await tgRequest(token, "deleteMessage", {
-        chat_id: chatId,
-        message_id: msg.message_id,
-      }).catch(() => {});
-      await sendReplies(token, supabase, chatId, match.content, 0);
+      // Parallelize delete + send for the fastest user-visible response
+      await Promise.all([
+        tgRequest(token, "deleteMessage", {
+          chat_id: chatId,
+          message_id: msg.message_id,
+        }).catch(() => {}),
+        sendReplies(token, supabase, chatId, match.content, 0),
+      ]);
     }
   }
 }
@@ -640,7 +652,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
         // Always 200 OK quickly so Telegram doesn't retry
         try {
-          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { supabaseAdmin } = await getAdminClient();
           const msg = update.message ?? update.edited_message;
           if (msg?.chat?.id) {
             await handleMessage(token, adminId, supabaseAdmin, msg);

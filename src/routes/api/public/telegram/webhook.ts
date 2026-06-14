@@ -333,6 +333,11 @@ async function saveState(
 }
 
 async function loadConfig(supabase: any): Promise<number> {
+  const cache = await loadReplyCache(supabase);
+  return cache.config;
+}
+
+async function loadConfigFresh(supabase: any): Promise<number> {
   const { data } = await supabase
     .from("bot_config")
     .select("delete_after_seconds")
@@ -345,21 +350,17 @@ async function saveConfig(supabase: any, seconds: number) {
   await supabase
     .from("bot_config")
     .upsert({ id: 1, delete_after_seconds: seconds, updated_at: new Date().toISOString() });
+  clearReplyCache();
 }
 
 async function getReplyByKeyword(supabase: any, keyword: string) {
-  const { data } = await supabase
-    .from("replies")
-    .select("content, delete_after_seconds")
-    .eq("keyword", keyword)
-    .maybeSingle();
-  if (!data) return null;
-  return { content: data.content, delete_after_seconds: data.delete_after_seconds as number | null };
+  const cache = await loadReplyCache(supabase);
+  return cache.replies.get(keyword) ?? null;
 }
 
 async function listKeywords(supabase: any): Promise<string[]> {
-  const { data } = await supabase.from("replies").select("keyword").order("created_at");
-  return (data ?? []).map((r: any) => r.keyword);
+  const cache = await loadReplyCache(supabase);
+  return [...cache.replies.keys()];
 }
 
 // ---------------------------------------------------------------------------

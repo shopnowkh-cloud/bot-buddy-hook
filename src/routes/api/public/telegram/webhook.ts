@@ -29,6 +29,45 @@ function getAdminClient() {
   return _adminClientPromise;
 }
 
+type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
+type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry> };
+const REPLY_CACHE_TTL_MS = 1_500;
+let replyCache: ReplyCache | null = null;
+let replyCachePromise: Promise<ReplyCache> | null = null;
+
+function clearReplyCache() {
+  replyCache = null;
+  replyCachePromise = null;
+}
+
+async function loadReplyCache(supabase: any): Promise<ReplyCache> {
+  const now = Date.now();
+  if (replyCache && replyCache.expiresAt > now) return replyCache;
+  if (replyCachePromise) return replyCachePromise;
+
+  replyCachePromise = Promise.all([
+    supabase.from("replies").select("keyword, content, delete_after_seconds").order("created_at"),
+    supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
+  ]).then(([replyResult, configResult]: any[]) => {
+    const replies = new Map<string, ReplyCacheEntry>();
+    for (const row of replyResult.data ?? []) {
+      replies.set(String(row.keyword).toLowerCase(), {
+        content: row.content,
+        delete_after_seconds: row.delete_after_seconds as number | null,
+      });
+    }
+    replyCache = {
+      expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
+      config: configResult.data?.delete_after_seconds ?? 0,
+      replies,
+    };
+    replyCachePromise = null;
+    return replyCache;
+  });
+
+  return replyCachePromise;
+}
+
 async function tgRequest(token: string, method: string, body: TgRequestBody) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
@@ -184,11 +223,51 @@ async function sendReply(
     });
   }
 
-  if (res?.ok && res.result?.message_id && autoDeleteSeconds > 0) {
+  return res?.ok && res.result?.message_id && autoDeleteSeconds > 0
+    ? {
+        chat_id: chatId,
+        message_id: res.result.message_id,
+        delete_at: new Date(Date.now() + autoDeleteSeconds * 1000).toISOString(),
+      }
+    : null;
+}
+
+async function insertPendingDeletions(supabase: any, rows: any[]) {
+  if (rows.length > 0) {
+    await supabase.from("pending_deletions").insert(rows);
+  }
+}
+
+async function getEffectiveDeleteSeconds(supabase: any, match: any) {
+  if (match.delete_after_seconds !== null && match.delete_after_seconds !== undefined) {
+    return match.delete_after_seconds;
+  }
+  return loadConfig(supabase);
+}
+
+async function deleteAndSendMatch(
+  token: string,
+  supabase: any,
+  chatId: number,
+  messageId: number,
+  match: any,
+) {
+  const effective = await getEffectiveDeleteSeconds(supabase, match);
+  await Promise.all([
+    tgRequest(token, "deleteMessage", {
+      chat_id: chatId,
+      message_id: messageId,
+    }).catch(() => {}),
+    sendReplies(token, supabase, chatId, match.content, effective),
+  ]);
+}
+
+async function scheduleReplyDelete(supabase: any, chatId: number, messageId: number, autoDeleteSeconds: number) {
+  if (autoDeleteSeconds > 0) {
     const deleteAt = new Date(Date.now() + autoDeleteSeconds * 1000).toISOString();
     await supabase.from("pending_deletions").insert({
       chat_id: chatId,
-      message_id: res.result.message_id,
+      message_id: messageId,
       delete_at: deleteAt,
     });
   }
@@ -205,9 +284,10 @@ async function sendReplies(
   autoDeleteSeconds: number,
 ) {
   const list = Array.isArray(content) ? content : [content];
-  for (const item of list) {
-    await sendReply(token, supabase, chatId, item, autoDeleteSeconds);
-  }
+  const pendingRows = (await Promise.all(
+    list.map((item) => sendReply(token, supabase, chatId, item, autoDeleteSeconds)),
+  )).filter(Boolean);
+  await insertPendingDeletions(supabase, pendingRows);
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +333,11 @@ async function saveState(
 }
 
 async function loadConfig(supabase: any): Promise<number> {
+  const cache = await loadReplyCache(supabase);
+  return cache.config;
+}
+
+async function loadConfigFresh(supabase: any): Promise<number> {
   const { data } = await supabase
     .from("bot_config")
     .select("delete_after_seconds")
@@ -265,21 +350,17 @@ async function saveConfig(supabase: any, seconds: number) {
   await supabase
     .from("bot_config")
     .upsert({ id: 1, delete_after_seconds: seconds, updated_at: new Date().toISOString() });
+  clearReplyCache();
 }
 
 async function getReplyByKeyword(supabase: any, keyword: string) {
-  const { data } = await supabase
-    .from("replies")
-    .select("content, delete_after_seconds")
-    .eq("keyword", keyword)
-    .maybeSingle();
-  if (!data) return null;
-  return { content: data.content, delete_after_seconds: data.delete_after_seconds as number | null };
+  const cache = await loadReplyCache(supabase);
+  return cache.replies.get(keyword) ?? null;
 }
 
 async function listKeywords(supabase: any): Promise<string[]> {
-  const { data } = await supabase.from("replies").select("keyword").order("created_at");
-  return (data ?? []).map((r: any) => r.keyword);
+  const cache = await loadReplyCache(supabase);
+  return [...cache.replies.keys()];
 }
 
 // ---------------------------------------------------------------------------
@@ -289,18 +370,12 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   const chatId = msg.chat.id;
   const text: string | undefined = msg.text;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
-  const cfg = await loadConfig(supabase);
 
   if (isGroup) {
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
-        await tgRequest(token, "deleteMessage", {
-          chat_id: chatId,
-          message_id: msg.message_id,
-        }).catch(() => {});
-        const effective = match.delete_after_seconds ?? cfg;
-        await sendReplies(token, supabase, chatId, match.content, effective);
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
       }
     }
     return;
@@ -327,12 +402,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   if (text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      await tgRequest(token, "deleteMessage", {
-        chat_id: chatId,
-        message_id: msg.message_id,
-      }).catch(() => {});
-      const effective = match.delete_after_seconds ?? cfg;
-      await sendReplies(token, supabase, chatId, match.content, effective);
+      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
     }
   }
 }
@@ -410,6 +480,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         .from("replies")
         .update({ delete_after_seconds: newVal, updated_at: new Date().toISOString() })
         .eq("keyword", kw);
+      clearReplyCache();
       await saveState(supabase, chatId, "keyword_action", null, kw);
       const label = newVal === 0 ? "បិទ (មិនលុប)" : `លុបក្នុង ${formatDelay(newVal)}`;
       await tgRequest(token, "sendMessage", {
@@ -519,6 +590,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
 
     if (text === "🗑 លុប") {
       await supabase.from("replies").delete().eq("keyword", kw);
+      clearReplyCache();
       const keys = await listKeywords(supabase);
       if (keys.length === 0) {
         await saveState(supabase, chatId, null, null, null);
@@ -573,6 +645,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
           { keyword: kw, content: finalContent, updated_at: new Date().toISOString() },
           { onConflict: "keyword" },
         );
+      clearReplyCache();
 
       await saveState(supabase, chatId, null, null, null, []);
       await tgRequest(token, "sendMessage", {

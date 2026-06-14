@@ -5,10 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Pencil, Save, RefreshCw, Clock } from "lucide-react";
+import {
+  Trash2,
+  Pencil,
+  Save,
+  RefreshCw,
+  Clock,
+  MessageSquareText,
+  Timer,
+  BarChart3,
+  ListChecks,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Hash,
+} from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 
@@ -17,6 +29,7 @@ export const Route = createFileRoute("/miniapp")({
     meta: [
       { title: "Bot Admin Dashboard" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { name: "theme-color", content: "#17212b" },
     ],
     scripts: [{ src: "https://telegram.org/js/telegram-web-app.js" }],
   }),
@@ -48,6 +61,16 @@ function getInitData(): string {
   const tg = (window as any).Telegram?.WebApp;
   return tg?.initData ?? "";
 }
+function hapticImpact(style: "light" | "medium" | "heavy" = "light") {
+  try {
+    (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred(style);
+  } catch {}
+}
+function hapticNotify(type: "success" | "warning" | "error") {
+  try {
+    (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type);
+  } catch {}
+}
 
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch("/api/public/miniapp/api", {
@@ -73,9 +96,12 @@ function fmtDelay(s: number | null | undefined): string {
   return `${s} វិនាទី`;
 }
 
+type Tab = "stats" | "keywords" | "timer" | "pending";
+
 function MiniApp() {
   const [ready, setReady] = useState(false);
   const [authErr, setAuthErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("stats");
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -83,7 +109,8 @@ function MiniApp() {
     if (tg) {
       tg.ready();
       tg.expand();
-      try { tg.setHeaderColor("secondary_bg_color"); } catch {}
+      try { tg.setHeaderColor("bg_color"); } catch {}
+      try { tg.setBackgroundColor("#17212b"); } catch {}
     }
     setReady(true);
   }, []);
@@ -99,72 +126,163 @@ function MiniApp() {
     if (meQ.error) setAuthErr((meQ.error as Error).message);
   }, [meQ.error]);
 
-  if (!ready) return <div className="p-6 text-center text-muted-foreground">កំពុងផ្ទុក...</div>;
+  if (!ready) {
+    return (
+      <div className="tg-app min-h-screen grid place-items-center">
+        <p className="tg-hint">កំពុងផ្ទុក...</p>
+      </div>
+    );
+  }
 
   if (authErr) {
     return (
-      <div className="p-6 max-w-md mx-auto">
-        <Card>
-          <CardHeader><CardTitle>មិនមានសិទ្ធិចូល</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-3">
-              Mini App នេះត្រូវបើកពី Telegram ដោយគណនី Admin តែប៉ុណ្ណោះ។
-            </p>
-            <pre className="text-xs bg-muted p-2 rounded overflow-auto">{authErr}</pre>
-          </CardContent>
-        </Card>
+      <div className="tg-app min-h-screen p-4">
+        <div className="tg-card p-5 max-w-md mx-auto mt-10">
+          <h2 className="text-lg font-bold mb-2">មិនមានសិទ្ធិចូល</h2>
+          <p className="tg-hint text-sm mb-3">
+            Mini App នេះត្រូវបើកពី Telegram ដោយគណនី Admin តែប៉ុណ្ណោះ។
+          </p>
+          <pre className="text-xs bg-black/30 p-2 rounded overflow-auto">{authErr}</pre>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background pb-safe">
-      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Bot Dashboard</h1>
+    <div className="tg-app min-h-screen flex flex-col">
+      <style>{tgStyles}</style>
+
+      {/* Header */}
+      <header className="px-4 pt-4 pb-3 flex items-center gap-3">
+        <div className="h-11 w-11 shrink-0 rounded-full bg-[var(--tg-btn)] grid place-items-center text-white font-bold text-lg">
+          {meQ.data?.user?.first_name?.[0]?.toUpperCase() ?? "A"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base font-semibold truncate">Bot Dashboard</h1>
           {meQ.data?.user && (
-            <p className="text-xs text-muted-foreground">
-              {meQ.data.user.first_name} {meQ.data.user.username ? `@${meQ.data.user.username}` : ""}
+            <p className="tg-hint text-xs truncate">
+              {meQ.data.user.first_name}
+              {meQ.data.user.username ? ` · @${meQ.data.user.username}` : ""}
             </p>
           )}
         </div>
-        <Button size="sm" variant="ghost" onClick={() => qc.invalidateQueries()}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        <button
+          aria-label="Refresh"
+          onClick={() => { hapticImpact("light"); qc.invalidateQueries(); }}
+          className="h-10 w-10 rounded-full grid place-items-center bg-[var(--tg-section)] active:scale-95 transition"
+        >
+          <RefreshCw className="h-5 w-5" />
+        </button>
       </header>
 
-      <Tabs defaultValue="stats" className="px-3 pt-3">
-        <TabsList className="grid grid-cols-4 w-full">
-          <TabsTrigger value="stats">ស្ថិតិ</TabsTrigger>
-          <TabsTrigger value="keywords">ពាក្យ</TabsTrigger>
-          <TabsTrigger value="timer">Timer</TabsTrigger>
-          <TabsTrigger value="pending">Pending</TabsTrigger>
-        </TabsList>
+      {/* Content */}
+      <main className="flex-1 px-3 pb-28 overflow-y-auto">
+        {tab === "stats" && <StatsPanel onGo={setTab} />}
+        {tab === "keywords" && <KeywordsPanel />}
+        {tab === "timer" && <TimerPanel />}
+        {tab === "pending" && <PendingPanel />}
+      </main>
 
-        <TabsContent value="stats" className="mt-3"><StatsPanel /></TabsContent>
-        <TabsContent value="keywords" className="mt-3"><KeywordsPanel /></TabsContent>
-        <TabsContent value="timer" className="mt-3"><TimerPanel /></TabsContent>
-        <TabsContent value="pending" className="mt-3"><PendingPanel /></TabsContent>
-      </Tabs>
-      <Toaster />
+      {/* Bottom tab bar — large clear buttons */}
+      <nav className="fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe">
+        <div className="grid grid-cols-4 gap-1 px-2 py-2">
+          <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
+          <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
+          <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
+          <TabBtn icon={<ListChecks />} label="Pending" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />
+        </div>
+      </nav>
+
+      <Toaster position="top-center" />
     </div>
   );
 }
 
-function StatsPanel() {
+function TabBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition active:scale-95 ${
+        active ? "bg-[var(--tg-btn)] text-white" : "text-[var(--tg-hint)]"
+      }`}
+    >
+      <span className="[&_svg]:h-6 [&_svg]:w-6">{icon}</span>
+      <span className="text-[11px] font-medium">{label}</span>
+    </button>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="tg-hint text-xs font-semibold uppercase tracking-wider px-2 mt-2 mb-2">{children}</h2>;
+}
+
+function StatsPanel({ onGo }: { onGo: (t: Tab) => void }) {
   const q = useQuery({
     queryKey: ["stats"],
     queryFn: () => callApi<{ replies_count: number; pending_count: number; global_timer: number }>("stats"),
   });
-  if (q.isLoading) return <p className="text-sm text-muted-foreground">កំពុងផ្ទុក...</p>;
-  if (q.error) return <p className="text-sm text-destructive">{(q.error as Error).message}</p>;
-  const d = q.data!;
+
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">ពាក្យគន្លឹះ</p><p className="text-2xl font-bold">{d.replies_count}</p></CardContent></Card>
-      <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">សារនឹងលុប</p><p className="text-2xl font-bold">{d.pending_count}</p></CardContent></Card>
-      <Card className="col-span-2"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Timer សកល</p><p className="text-xl font-semibold">{fmtDelay(d.global_timer)}</p></CardContent></Card>
+    <div className="space-y-3 pt-2">
+      <SectionTitle>ទិដ្ឋភាពទូទៅ</SectionTitle>
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard
+          icon={<MessageSquareText />}
+          label="ពាក្យគន្លឹះ"
+          value={q.isLoading ? "…" : String(q.data?.replies_count ?? 0)}
+          onClick={() => onGo("keywords")}
+        />
+        <StatCard
+          icon={<ListChecks />}
+          label="សារនឹងលុប"
+          value={q.isLoading ? "…" : String(q.data?.pending_count ?? 0)}
+          onClick={() => onGo("pending")}
+        />
+      </div>
+      <button
+        onClick={() => onGo("timer")}
+        className="tg-card w-full p-4 flex items-center gap-3 active:scale-[0.99] transition"
+      >
+        <div className="h-12 w-12 rounded-2xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
+          <Timer className="h-6 w-6" />
+        </div>
+        <div className="min-w-0 flex-1 text-left">
+          <p className="tg-hint text-xs">Timer សកល</p>
+          <p className="text-lg font-semibold truncate">{fmtDelay(q.data?.global_timer ?? 0)}</p>
+        </div>
+        <ChevronRight className="h-5 w-5 tg-hint" />
+      </button>
+
+      <SectionTitle>សកម្មភាពរហ័ស</SectionTitle>
+      <div className="grid grid-cols-1 gap-2">
+        <BigAction icon={<Plus />} label="បន្ថែមពាក្យគន្លឹះថ្មី" onClick={() => onGo("keywords")} />
+        <BigAction icon={<Timer />} label="កែ Timer សកល" onClick={() => onGo("timer")} />
+      </div>
     </div>
+  );
+}
+
+function StatCard({ icon, label, value, onClick }: { icon: React.ReactNode; label: string; value: string; onClick?: () => void }) {
+  return (
+    <button onClick={onClick} className="tg-card p-4 text-left active:scale-[0.98] transition">
+      <div className="flex items-center gap-2 tg-hint text-xs mb-2">
+        <span className="[&_svg]:h-4 [&_svg]:w-4">{icon}</span>
+        {label}
+      </div>
+      <p className="text-3xl font-bold">{value}</p>
+    </button>
+  );
+}
+
+function BigAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={() => { hapticImpact("medium"); onClick(); }}
+      className="w-full h-14 rounded-2xl bg-[var(--tg-btn)] text-white font-semibold text-base flex items-center justify-center gap-2 active:scale-[0.98] transition shadow-lg shadow-black/20"
+    >
+      <span className="[&_svg]:h-5 [&_svg]:w-5">{icon}</span>
+      {label}
+    </button>
   );
 }
 
@@ -177,38 +295,58 @@ function KeywordsPanel() {
   const [editing, setEditing] = useState<Reply | null>(null);
   const [creating, setCreating] = useState(false);
 
-  if (q.isLoading) return <p className="text-sm text-muted-foreground">កំពុងផ្ទុក...</p>;
-  if (q.error) return <p className="text-sm text-destructive">{(q.error as Error).message}</p>;
-  const replies = q.data?.replies ?? [];
-
   if (editing || creating) {
     return (
-      <ReplyEditor
-        initial={editing}
-        onClose={() => { setEditing(null); setCreating(false); }}
-        onSaved={() => { setEditing(null); setCreating(false); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); }}
-      />
+      <div className="pt-2">
+        <button
+          onClick={() => { setEditing(null); setCreating(false); }}
+          className="flex items-center gap-1 tg-hint text-sm mb-3 px-2 py-2 active:opacity-70"
+        >
+          <ChevronLeft className="h-4 w-4" /> ត្រឡប់
+        </button>
+        <ReplyEditor
+          initial={editing}
+          onClose={() => { setEditing(null); setCreating(false); }}
+          onSaved={() => { setEditing(null); setCreating(false); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); }}
+        />
+      </div>
     );
   }
 
+  const replies = q.data?.replies ?? [];
   return (
-    <div className="space-y-2">
-      <Button className="w-full" onClick={() => setCreating(true)}>+ បន្ថែមពាក្យថ្មី</Button>
-      {replies.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">មិនទាន់មានពាក្យគន្លឹះ</p>}
-      {replies.map((r) => (
-        <Card key={r.keyword}>
-          <CardContent className="p-3 flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="font-medium truncate">{r.keyword}</p>
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
+    <div className="space-y-3 pt-2">
+      <BigAction icon={<Plus />} label="បន្ថែមពាក្យថ្មី" onClick={() => setCreating(true)} />
+      {q.isLoading && <p className="tg-hint text-sm text-center py-6">កំពុងផ្ទុក...</p>}
+      {!q.isLoading && replies.length === 0 && (
+        <div className="tg-card p-8 text-center">
+          <Hash className="h-10 w-10 mx-auto mb-2 tg-hint" />
+          <p className="tg-hint text-sm">មិនទាន់មានពាក្យគន្លឹះ</p>
+        </div>
+      )}
+      <div className="space-y-2">
+        {replies.map((r) => (
+          <div key={r.keyword} className="tg-card p-3 flex items-center gap-3">
+            <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
+              <Hash className="h-5 w-5" />
+            </div>
+            <button onClick={() => setEditing(r)} className="min-w-0 flex-1 text-left active:opacity-70">
+              <p className="font-semibold truncate">{r.keyword}</p>
+              <p className="tg-hint text-xs flex items-center gap-1 mt-0.5">
                 <Clock className="h-3 w-3" /> {fmtDelay(r.delete_after_seconds)} · {Array.isArray(r.content) ? r.content.length : 1} សារ
               </p>
-            </div>
-            <Button size="icon" variant="ghost" onClick={() => setEditing(r)}><Pencil className="h-4 w-4" /></Button>
+            </button>
+            <button
+              onClick={() => setEditing(r)}
+              className="h-10 w-10 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95"
+              aria-label="Edit"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
             <DeleteBtn keyword={r.keyword} />
-          </CardContent>
-        </Card>
-      ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -217,13 +355,18 @@ function DeleteBtn({ keyword }: { keyword: string }) {
   const qc = useQueryClient();
   const m = useMutation({
     mutationFn: () => callApi("delete_reply", { keyword }),
-    onSuccess: () => { toast.success("លុបរួចរាល់"); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: () => { hapticNotify("success"); toast.success("លុបរួចរាល់"); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
   return (
-    <Button size="icon" variant="ghost" onClick={() => { if (confirm(`លុបពាក្យ "${keyword}"?`)) m.mutate(); }} disabled={m.isPending}>
-      <Trash2 className="h-4 w-4 text-destructive" />
-    </Button>
+    <button
+      onClick={() => { if (confirm(`លុបពាក្យ "${keyword}"?`)) m.mutate(); }}
+      disabled={m.isPending}
+      className="h-10 w-10 rounded-xl bg-red-500/15 text-red-400 grid place-items-center active:scale-95 disabled:opacity-50"
+      aria-label="Delete"
+    >
+      <Trash2 className="h-4 w-4" />
+    </button>
   );
 }
 
@@ -246,7 +389,6 @@ function ReplyEditor({ initial, onClose, onSaved }: { initial: Reply | null; onC
       if (!kw) throw new Error("ត្រូវការពាក្យគន្លឹះ");
       let content: ContentItem[];
       if (hasMedia && initial) {
-        // preserve media items; only allow editing text items
         const blocks = text.split(/\n---\n/);
         const original = initial.content;
         content = original.map((c, i) =>
@@ -263,33 +405,74 @@ function ReplyEditor({ initial, onClose, onSaved }: { initial: Reply | null; onC
       }
       return callApi("upsert_reply", { keyword: kw, content, delete_after_seconds });
     },
-    onSuccess: () => { toast.success("រក្សាទុករួចរាល់"); onSaved(); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: () => { hapticNotify("success"); toast.success("រក្សាទុករួចរាល់"); onSaved(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
 
+  const presets = [0, 10, 30, 60, 300];
+
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-base">{initial ? "កែប្រែ" : "ពាក្យថ្មី"}</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
+    <div className="space-y-4">
+      <div className="tg-card p-4 space-y-3">
         <div>
-          <Label>ពាក្យគន្លឹះ</Label>
-          <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} disabled={!!initial} placeholder="@username ឬ ពាក្យ" />
+          <Label className="tg-hint text-xs">ពាក្យគន្លឹះ</Label>
+          <Input
+            className="tg-input h-12 mt-1 text-base"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            disabled={!!initial}
+            placeholder="@username ឬ ពាក្យ"
+          />
         </div>
         <div>
-          <Label>មាតិកា (បំបែកដោយ <code>---</code> សម្រាប់សារច្រើន)</Label>
-          <Textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder={"សួស្តី!\n---\nសារទី២"} />
-          {hasMedia && <p className="text-xs text-muted-foreground mt-1">សារនេះមាន media — អាចកែតែអត្ថបទប៉ុណ្ណោះ។ បើចង់ប្តូរ media សូមផ្ញើតាម bot។</p>}
+          <Label className="tg-hint text-xs">មាតិកា (បំបែកដោយ <code>---</code>)</Label>
+          <Textarea
+            className="tg-input mt-1 text-base min-h-[140px]"
+            rows={6}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={"សួស្តី!\n---\nសារទី២"}
+          />
+          {hasMedia && <p className="tg-hint text-xs mt-1">មាន media — អាចកែតែអត្ថបទ។</p>}
         </div>
-        <div>
-          <Label>Timer លុបសារ (វិនាទី) — ទុកទទេបើប្រើ Timer សកល</Label>
-          <Input type="number" min={0} value={timer} onChange={(e) => setTimer(e.target.value)} placeholder="ឧ. 30" />
+      </div>
+
+      <div className="tg-card p-4 space-y-3">
+        <Label className="tg-hint text-xs">Timer លុបសារ (វិនាទី)</Label>
+        <Input
+          type="number"
+          min={0}
+          className="tg-input h-12 text-base"
+          value={timer}
+          onChange={(e) => setTimer(e.target.value)}
+          placeholder="ទុកទទេបើប្រើ Timer សកល"
+        />
+        <div className="flex flex-wrap gap-2">
+          {presets.map((p) => (
+            <button
+              key={p}
+              onClick={() => setTimer(String(p))}
+              className={`h-9 px-3 rounded-full text-sm font-medium ${timer === String(p) ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section-2)] tg-hint"}`}
+            >
+              {fmtDelay(p)}
+            </button>
+          ))}
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => m.mutate()} disabled={m.isPending} className="flex-1"><Save className="h-4 w-4" /> រក្សាទុក</Button>
-          <Button variant="outline" onClick={onClose} disabled={m.isPending}>បោះបង់</Button>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" onClick={onClose} disabled={m.isPending} className="h-14 text-base rounded-2xl">
+          បោះបង់
+        </Button>
+        <button
+          onClick={() => m.mutate()}
+          disabled={m.isPending}
+          className="h-14 rounded-2xl bg-[var(--tg-btn)] text-white font-semibold text-base flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-60"
+        >
+          <Save className="h-5 w-5" /> រក្សាទុក
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -304,26 +487,50 @@ function TimerPanel() {
 
   const m = useMutation({
     mutationFn: () => callApi("set_global_timer", { delete_after_seconds: Number(val) }),
-    onSuccess: () => { toast.success("រក្សាទុករួចរាល់"); qc.invalidateQueries(); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: () => { hapticNotify("success"); toast.success("រក្សាទុករួចរាល់"); qc.invalidateQueries(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
 
   const presets = [0, 10, 30, 60, 120, 300, 600];
+
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-base">Timer សកល</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        <Label>រយៈពេល (វិនាទី) — <Badge variant="secondary">{fmtDelay(Number(val) || 0)}</Badge></Label>
-        <Input type="number" min={0} value={val} onChange={(e) => setVal(e.target.value)} />
-        <div className="flex flex-wrap gap-2">
+    <div className="space-y-3 pt-2">
+      <div className="tg-card p-6 text-center">
+        <p className="tg-hint text-xs mb-1">Timer សកលបច្ចុប្បន្ន</p>
+        <p className="text-4xl font-bold">{fmtDelay(Number(val) || 0)}</p>
+      </div>
+
+      <div className="tg-card p-4 space-y-3">
+        <Label className="tg-hint text-xs">បញ្ចូលរយៈពេល (វិនាទី)</Label>
+        <Input
+          type="number"
+          min={0}
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          className="tg-input h-14 text-xl text-center font-semibold"
+        />
+        <div className="grid grid-cols-3 gap-2">
           {presets.map((p) => (
-            <Button key={p} size="sm" variant="outline" onClick={() => setVal(String(p))}>{fmtDelay(p)}</Button>
+            <button
+              key={p}
+              onClick={() => { hapticImpact(); setVal(String(p)); }}
+              className={`h-12 rounded-xl text-sm font-semibold ${val === String(p) ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section-2)]"}`}
+            >
+              {fmtDelay(p)}
+            </button>
           ))}
         </div>
-        <Button onClick={() => m.mutate()} disabled={m.isPending} className="w-full">រក្សាទុក</Button>
-        <p className="text-xs text-muted-foreground">សារដែលគ្មាន per-keyword timer នឹងប្រើតម្លៃនេះ។ 0 = មិនលុប។</p>
-      </CardContent>
-    </Card>
+      </div>
+
+      <button
+        onClick={() => m.mutate()}
+        disabled={m.isPending}
+        className="w-full h-14 rounded-2xl bg-[var(--tg-btn)] text-white font-semibold text-base active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-black/20"
+      >
+        រក្សាទុក
+      </button>
+      <p className="tg-hint text-xs text-center px-4">សារដែលគ្មាន per-keyword timer នឹងប្រើតម្លៃនេះ។ 0 = មិនលុប។</p>
+    </div>
   );
 }
 
@@ -332,36 +539,88 @@ function PendingPanel() {
   const q = useQuery({
     queryKey: ["pending"],
     queryFn: () => callApi<{ pending: PendingRow[] }>("list_pending"),
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
   const m = useMutation({
     mutationFn: () => callApi("clear_pending"),
-    onSuccess: () => { toast.success("លុបបញ្ជីរួចរាល់"); qc.invalidateQueries(); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: () => { hapticNotify("success"); toast.success("លុបបញ្ជីរួចរាល់"); qc.invalidateQueries(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
 
-  if (q.isLoading) return <p className="text-sm text-muted-foreground">កំពុងផ្ទុក...</p>;
   const rows = q.data?.pending ?? [];
+
   return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">{rows.length} សារកំពុងរង់ចាំលុប</p>
-        <Button size="sm" variant="destructive" onClick={() => { if (confirm("លុបបញ្ជីទាំងអស់?")) m.mutate(); }} disabled={m.isPending || rows.length === 0}>សម្អាត</Button>
+    <div className="space-y-3 pt-2">
+      <div className="tg-card p-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="tg-hint text-xs">សារកំពុងរង់ចាំ</p>
+          <p className="text-3xl font-bold">{rows.length}</p>
+        </div>
+        <button
+          onClick={() => { if (confirm("លុបបញ្ជីទាំងអស់?")) m.mutate(); }}
+          disabled={m.isPending || rows.length === 0}
+          className="h-12 px-5 rounded-2xl bg-red-500 text-white font-semibold active:scale-95 disabled:opacity-40"
+        >
+          សម្អាត
+        </button>
       </div>
-      {rows.map((r) => {
-        const ms = new Date(r.delete_at).getTime() - Date.now();
-        return (
-          <Card key={r.id}><CardContent className="p-3 text-sm">
-            <div className="flex justify-between">
-              <span>Chat #{r.chat_id}</span>
-              <span className={ms < 0 ? "text-destructive" : "text-muted-foreground"}>
-                {ms < 0 ? "ហួសម៉ោង" : `នៅសល់ ${Math.round(ms / 1000)}វិ`}
+
+      {q.isLoading && <p className="tg-hint text-sm text-center py-6">កំពុងផ្ទុក...</p>}
+      {!q.isLoading && rows.length === 0 && (
+        <div className="tg-card p-8 text-center">
+          <ListChecks className="h-10 w-10 mx-auto mb-2 tg-hint" />
+          <p className="tg-hint text-sm">គ្មានសារកំពុងរង់ចាំ</p>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const ms = new Date(r.delete_at).getTime() - Date.now();
+          const overdue = ms < 0;
+          return (
+            <div key={r.id} className="tg-card p-3 flex items-center gap-3">
+              <div className={`h-11 w-11 shrink-0 rounded-xl grid place-items-center ${overdue ? "bg-red-500/15 text-red-400" : "bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]"}`}>
+                <Clock className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-sm truncate">Chat #{r.chat_id} · msg {r.message_id}</p>
+                <p className="tg-hint text-xs">{new Date(r.delete_at).toLocaleString()}</p>
+              </div>
+              <span className={`text-xs font-semibold shrink-0 ${overdue ? "text-red-400" : "tg-hint"}`}>
+                {overdue ? "ហួស" : `${Math.round(ms / 1000)}វិ`}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground">msg {r.message_id} · {new Date(r.delete_at).toLocaleString()}</p>
-          </CardContent></Card>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+const tgStyles = `
+.tg-app {
+  --tg-bg: var(--tg-theme-bg-color, #17212b);
+  --tg-section: var(--tg-theme-secondary-bg-color, #232e3c);
+  --tg-section-2: rgba(255,255,255,0.06);
+  --tg-text: var(--tg-theme-text-color, #ffffff);
+  --tg-hint: var(--tg-theme-hint-color, #7d8e9a);
+  --tg-btn: var(--tg-theme-button-color, #2ea6ff);
+  --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
+}
+.tg-card {
+  background: var(--tg-section);
+  border-radius: 16px;
+}
+.tg-hint { color: var(--tg-hint); }
+.tg-input {
+  background: var(--tg-section-2) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  color: var(--tg-text) !important;
+  border-radius: 12px !important;
+}
+.tg-input::placeholder { color: var(--tg-hint); }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 8px); }
+`;

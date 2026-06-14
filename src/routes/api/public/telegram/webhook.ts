@@ -184,11 +184,51 @@ async function sendReply(
     });
   }
 
-  if (res?.ok && res.result?.message_id && autoDeleteSeconds > 0) {
+  return res?.ok && res.result?.message_id && autoDeleteSeconds > 0
+    ? {
+        chat_id: chatId,
+        message_id: res.result.message_id,
+        delete_at: new Date(Date.now() + autoDeleteSeconds * 1000).toISOString(),
+      }
+    : null;
+}
+
+async function insertPendingDeletions(supabase: any, rows: any[]) {
+  if (rows.length > 0) {
+    await supabase.from("pending_deletions").insert(rows);
+  }
+}
+
+async function getEffectiveDeleteSeconds(supabase: any, match: any) {
+  if (match.delete_after_seconds !== null && match.delete_after_seconds !== undefined) {
+    return match.delete_after_seconds;
+  }
+  return loadConfig(supabase);
+}
+
+async function deleteAndSendMatch(
+  token: string,
+  supabase: any,
+  chatId: number,
+  messageId: number,
+  match: any,
+) {
+  const effective = await getEffectiveDeleteSeconds(supabase, match);
+  await Promise.all([
+    tgRequest(token, "deleteMessage", {
+      chat_id: chatId,
+      message_id: messageId,
+    }).catch(() => {}),
+    sendReplies(token, supabase, chatId, match.content, effective),
+  ]);
+}
+
+async function scheduleReplyDelete(supabase: any, chatId: number, messageId: number, autoDeleteSeconds: number) {
+  if (autoDeleteSeconds > 0) {
     const deleteAt = new Date(Date.now() + autoDeleteSeconds * 1000).toISOString();
     await supabase.from("pending_deletions").insert({
       chat_id: chatId,
-      message_id: res.result.message_id,
+      message_id: messageId,
       delete_at: deleteAt,
     });
   }
@@ -205,9 +245,10 @@ async function sendReplies(
   autoDeleteSeconds: number,
 ) {
   const list = Array.isArray(content) ? content : [content];
-  for (const item of list) {
-    await sendReply(token, supabase, chatId, item, autoDeleteSeconds);
-  }
+  const pendingRows = (await Promise.all(
+    list.map((item) => sendReply(token, supabase, chatId, item, autoDeleteSeconds)),
+  )).filter(Boolean);
+  await insertPendingDeletions(supabase, pendingRows);
 }
 
 // ---------------------------------------------------------------------------

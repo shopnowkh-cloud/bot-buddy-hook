@@ -480,6 +480,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
         .from("replies")
         .update({ delete_after_seconds: newVal, updated_at: new Date().toISOString() })
         .eq("keyword", kw);
+      clearReplyCache();
       await saveState(supabase, chatId, "keyword_action", null, kw);
       const label = newVal === 0 ? "បិទ (មិនលុប)" : `លុបក្នុង ${formatDelay(newVal)}`;
       await tgRequest(token, "sendMessage", {
@@ -589,6 +590,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
 
     if (text === "🗑 លុប") {
       await supabase.from("replies").delete().eq("keyword", kw);
+      clearReplyCache();
       const keys = await listKeywords(supabase);
       if (keys.length === 0) {
         await saveState(supabase, chatId, null, null, null);
@@ -643,6 +645,7 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
           { keyword: kw, content: finalContent, updated_at: new Date().toISOString() },
           { onConflict: "keyword" },
         );
+      clearReplyCache();
 
       await saveState(supabase, chatId, null, null, null, []);
       await tgRequest(token, "sendMessage", {

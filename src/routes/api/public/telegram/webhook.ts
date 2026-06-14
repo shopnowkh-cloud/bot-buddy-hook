@@ -29,6 +29,45 @@ function getAdminClient() {
   return _adminClientPromise;
 }
 
+type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
+type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry> };
+const REPLY_CACHE_TTL_MS = 1_500;
+let replyCache: ReplyCache | null = null;
+let replyCachePromise: Promise<ReplyCache> | null = null;
+
+function clearReplyCache() {
+  replyCache = null;
+  replyCachePromise = null;
+}
+
+async function loadReplyCache(supabase: any): Promise<ReplyCache> {
+  const now = Date.now();
+  if (replyCache && replyCache.expiresAt > now) return replyCache;
+  if (replyCachePromise) return replyCachePromise;
+
+  replyCachePromise = Promise.all([
+    supabase.from("replies").select("keyword, content, delete_after_seconds").order("created_at"),
+    supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
+  ]).then(([replyResult, configResult]: any[]) => {
+    const replies = new Map<string, ReplyCacheEntry>();
+    for (const row of replyResult.data ?? []) {
+      replies.set(String(row.keyword).toLowerCase(), {
+        content: row.content,
+        delete_after_seconds: row.delete_after_seconds as number | null,
+      });
+    }
+    replyCache = {
+      expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
+      config: configResult.data?.delete_after_seconds ?? 0,
+      replies,
+    };
+    replyCachePromise = null;
+    return replyCache;
+  });
+
+  return replyCachePromise;
+}
+
 async function tgRequest(token: string, method: string, body: TgRequestBody) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",

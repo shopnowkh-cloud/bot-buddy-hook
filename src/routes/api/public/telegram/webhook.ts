@@ -330,18 +330,12 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   const chatId = msg.chat.id;
   const text: string | undefined = msg.text;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
-  const cfg = await loadConfig(supabase);
 
   if (isGroup) {
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
-        await tgRequest(token, "deleteMessage", {
-          chat_id: chatId,
-          message_id: msg.message_id,
-        }).catch(() => {});
-        const effective = match.delete_after_seconds ?? cfg;
-        await sendReplies(token, supabase, chatId, match.content, effective);
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
       }
     }
     return;
@@ -368,12 +362,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   if (text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      await tgRequest(token, "deleteMessage", {
-        chat_id: chatId,
-        message_id: msg.message_id,
-      }).catch(() => {});
-      const effective = match.delete_after_seconds ?? cfg;
-      await sendReplies(token, supabase, chatId, match.content, effective);
+      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
     }
   }
 }

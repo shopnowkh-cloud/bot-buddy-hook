@@ -441,7 +441,7 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
   }
 }
 
-async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
+export async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
   const chatId = msg.chat.id;
   const text: string | undefined = msg.text;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";

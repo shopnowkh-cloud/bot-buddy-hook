@@ -80,7 +80,7 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // ---------------------------------------------------------------------------
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
-const MAIN_KEYBOARD = {
+export const MAIN_KEYBOARD = {
   keyboard: [["បន្ថែមពាក្យថ្មី"], ["បញ្ជីពាក្យ កែប្រែ&លុប"], ["⏱ កំណត់ Timer លុបសារ"]],
   resize_keyboard: true,
   persistent: true,

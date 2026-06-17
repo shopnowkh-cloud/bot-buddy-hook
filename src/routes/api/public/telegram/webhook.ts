@@ -35,7 +35,7 @@ const REPLY_CACHE_TTL_MS = 1_500;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 
-function clearReplyCache() {
+export function clearReplyCache() {
   replyCache = null;
   replyCachePromise = null;
 }
@@ -80,7 +80,7 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // ---------------------------------------------------------------------------
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
-const MAIN_KEYBOARD = {
+export const MAIN_KEYBOARD = {
   keyboard: [["បន្ថែមពាក្យថ្មី"], ["បញ្ជីពាក្យ កែប្រែ&លុប"], ["⏱ កំណត់ Timer លុបសារ"]],
   resize_keyboard: true,
   persistent: true,
@@ -251,7 +251,7 @@ async function getEffectiveDeleteSeconds(supabase: any, match: any) {
   return loadConfig(supabase);
 }
 
-function buildKeywordKeyboard(keys: string[]) {
+export function buildKeywordKeyboard(keys: string[]) {
   if (keys.length === 0) return undefined;
   const rows: string[][] = [];
   for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
@@ -391,7 +391,7 @@ async function listKeywords(supabase: any): Promise<string[]> {
 // ---------------------------------------------------------------------------
 // Main message handler — mirrors handleMessage / handleUserMessage in bot.js
 // ---------------------------------------------------------------------------
-async function handleUserMessage(token: string, supabase: any, msg: any) {
+export async function handleUserMessage(token: string, supabase: any, msg: any) {
   const chatId = msg.chat.id;
   const text: string | undefined = msg.text;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
@@ -441,7 +441,7 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   }
 }
 
-async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
+export async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
   const chatId = msg.chat.id;
   const text: string | undefined = msg.text;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";

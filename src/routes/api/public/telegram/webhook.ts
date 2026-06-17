@@ -190,36 +190,42 @@ async function sendReply(
   chatId: number,
   reply: any,
   autoDeleteSeconds: number,
+  replyMarkup?: any,
 ) {
   let res: any;
+  const extra = replyMarkup ? { reply_markup: replyMarkup } : {};
   if (reply.type === "copy") {
     const method = reply.forward ? "forwardMessage" : "copyMessage";
     res = await tgRequest(token, method, {
       chat_id: chatId,
       from_chat_id: reply.from_chat_id,
       message_id: reply.message_id,
+      ...extra,
     });
   } else if (reply.type === "text") {
-    res = await tgRequest(token, "sendMessage", { chat_id: chatId, text: reply.content });
+    res = await tgRequest(token, "sendMessage", { chat_id: chatId, text: reply.content, ...extra });
   } else if (reply.type === "photo") {
     res = await tgRequest(token, "sendPhoto", {
       chat_id: chatId,
       photo: reply.content,
       caption: reply.caption,
+      ...extra,
     });
   } else if (reply.type === "video") {
     res = await tgRequest(token, "sendVideo", {
       chat_id: chatId,
       video: reply.content,
       caption: reply.caption,
+      ...extra,
     });
   } else if (reply.type === "voice") {
-    res = await tgRequest(token, "sendVoice", { chat_id: chatId, voice: reply.content });
+    res = await tgRequest(token, "sendVoice", { chat_id: chatId, voice: reply.content, ...extra });
   } else if (reply.type === "audio") {
     res = await tgRequest(token, "sendAudio", {
       chat_id: chatId,
       audio: reply.content,
       caption: reply.caption,
+      ...extra,
     });
   }
 
@@ -245,12 +251,20 @@ async function getEffectiveDeleteSeconds(supabase: any, match: any) {
   return loadConfig(supabase);
 }
 
+function buildKeywordKeyboard(keys: string[]) {
+  if (keys.length === 0) return undefined;
+  const rows: string[][] = [];
+  for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+  return { keyboard: rows, resize_keyboard: true, persistent: true };
+}
+
 async function deleteAndSendMatch(
   token: string,
   supabase: any,
   chatId: number,
   messageId: number,
   match: any,
+  replyMarkup?: any,
 ) {
   const effective = await getEffectiveDeleteSeconds(supabase, match);
   await Promise.all([
@@ -258,7 +272,7 @@ async function deleteAndSendMatch(
       chat_id: chatId,
       message_id: messageId,
     }).catch(() => {}),
-    sendReplies(token, supabase, chatId, match.content, effective),
+    sendReplies(token, supabase, chatId, match.content, effective, replyMarkup),
   ]);
 }
 
@@ -276,16 +290,27 @@ async function scheduleReplyDelete(supabase: any, chatId: number, messageId: num
 
 
 // Send one or many replies (handles both legacy single-object and new array shapes)
+// replyMarkup is attached only to the LAST item to avoid duplicate keyboards.
 async function sendReplies(
   token: string,
   supabase: any,
   chatId: number,
   content: any,
   autoDeleteSeconds: number,
+  replyMarkup?: any,
 ) {
   const list = Array.isArray(content) ? content : [content];
   const pendingRows = (await Promise.all(
-    list.map((item) => sendReply(token, supabase, chatId, item, autoDeleteSeconds)),
+    list.map((item, idx) =>
+      sendReply(
+        token,
+        supabase,
+        chatId,
+        item,
+        autoDeleteSeconds,
+        idx === list.length - 1 ? replyMarkup : undefined,
+      ),
+    ),
   )).filter(Boolean);
   await insertPendingDeletions(supabase, pendingRows);
 }
@@ -383,18 +408,20 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
 
   const isStart = text === "/start" || text?.startsWith("/start@");
 
+  // Private chat (non-admin): show keyword keyboard on every interaction so
+  // it always reappears even after the user clears chat history.
+  const keys = await listKeywords(supabase);
+  const kb = buildKeywordKeyboard(keys);
+
   if (isStart) {
-    const keys = await listKeywords(supabase);
     if (keys.length === 0) {
       await tgRequest(token, "sendMessage", { chat_id: chatId, text: "សួស្តី! 👋" });
       return;
     }
-    const rows: string[][] = [];
-    for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-      reply_markup: { keyboard: rows, resize_keyboard: true },
+      reply_markup: kb,
     });
     return;
   }
@@ -402,7 +429,14 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   if (text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
+      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, kb);
+    } else if (kb) {
+      // No match: still re-show keyboard so user can pick a valid keyword
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "សូមជ្រើសរើសពាក្យពីខាងក្រោម៖",
+        reply_markup: kb,
+      });
     }
   }
 }
@@ -682,13 +716,14 @@ async function handleMessage(token: string, adminId: number, supabase: any, msg:
   if (!s.state && text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      // Parallelize delete + send for the fastest user-visible response
+      // Parallelize delete + send; re-attach MAIN_KEYBOARD so it persists
+      // even after the admin clears chat history.
       await Promise.all([
         tgRequest(token, "deleteMessage", {
           chat_id: chatId,
           message_id: msg.message_id,
         }).catch(() => {}),
-        sendReplies(token, supabase, chatId, match.content, 0),
+        sendReplies(token, supabase, chatId, match.content, 0, MAIN_KEYBOARD),
       ]);
     }
   }

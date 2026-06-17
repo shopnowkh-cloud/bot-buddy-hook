@@ -408,18 +408,20 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
 
   const isStart = text === "/start" || text?.startsWith("/start@");
 
+  // Private chat (non-admin): show keyword keyboard on every interaction so
+  // it always reappears even after the user clears chat history.
+  const keys = await listKeywords(supabase);
+  const kb = buildKeywordKeyboard(keys);
+
   if (isStart) {
-    const keys = await listKeywords(supabase);
     if (keys.length === 0) {
       await tgRequest(token, "sendMessage", { chat_id: chatId, text: "សួស្តី! 👋" });
       return;
     }
-    const rows: string[][] = [];
-    for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-      reply_markup: { keyboard: rows, resize_keyboard: true },
+      reply_markup: kb,
     });
     return;
   }
@@ -427,7 +429,14 @@ async function handleUserMessage(token: string, supabase: any, msg: any) {
   if (text) {
     const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
     if (match) {
-      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
+      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, kb);
+    } else if (kb) {
+      // No match: still re-show keyboard so user can pick a valid keyword
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "សូមជ្រើសរើសពាក្យពីខាងក្រោម៖",
+        reply_markup: kb,
+      });
     }
   }
 }

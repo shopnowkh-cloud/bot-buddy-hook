@@ -35,7 +35,7 @@ const REPLY_CACHE_TTL_MS = 1_500;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 
-function clearReplyCache() {
+export function clearReplyCache() {
   replyCache = null;
   replyCachePromise = null;
 }

@@ -391,7 +391,7 @@ async function listKeywords(supabase: any): Promise<string[]> {
 // ---------------------------------------------------------------------------
 // Main message handler — mirrors handleMessage / handleUserMessage in bot.js
 // ---------------------------------------------------------------------------
-async function handleUserMessage(token: string, supabase: any, msg: any) {
+export async function handleUserMessage(token: string, supabase: any, msg: any) {
   const chatId = msg.chat.id;
   const text: string | undefined = msg.text;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";

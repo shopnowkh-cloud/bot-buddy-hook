@@ -251,7 +251,7 @@ async function getEffectiveDeleteSeconds(supabase: any, match: any) {
   return loadConfig(supabase);
 }
 
-function buildKeywordKeyboard(keys: string[]) {
+export function buildKeywordKeyboard(keys: string[]) {
   if (keys.length === 0) return undefined;
   const rows: string[][] = [];
   for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));

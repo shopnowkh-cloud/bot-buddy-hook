@@ -81,10 +81,21 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
 export const MAIN_KEYBOARD = {
-  keyboard: [["បន្ថែមពាក្យថ្មី"], ["បញ្ជីពាក្យ កែប្រែ&លុប"], ["⏱ កំណត់ Timer លុបសារ"]],
+  keyboard: [
+    ["បន្ថែមពាក្យថ្មី"],
+    ["បញ្ជីពាក្យ កែប្រែ&លុប"],
+    ["⏱ កំណត់ Timer លុបសារ"],
+    ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
+  ],
   resize_keyboard: true,
   persistent: true,
 };
+
+const SCHED_REPEAT_KEYBOARD = {
+  keyboard: [["🔂 មួយដង", "🔁 រាល់ថ្ងៃ"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
 
 const CANCEL_KEYBOARD = {
   keyboard: [["❌ បោះបង់"]],

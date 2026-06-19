@@ -408,6 +408,20 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
 
   if (isGroup) {
+    // Track this group so admin can pick it for scheduled sends.
+    supabase
+      .from("tg_groups")
+      .upsert(
+        {
+          chat_id: chatId,
+          title: msg.chat.title ?? null,
+          is_member: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "chat_id" },
+      )
+      .then(() => {}, () => {});
+
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
@@ -416,6 +430,7 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
     }
     return;
   }
+
 
   const isStart = text === "/start" || text?.startsWith("/start@");
 

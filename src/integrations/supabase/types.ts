@@ -107,6 +107,66 @@ export type Database = {
         }
         Relationships: []
       }
+      scheduled_messages: {
+        Row: {
+          created_at: string
+          daily_time: string | null
+          enabled: boolean
+          group_chat_id: number
+          group_title: string | null
+          id: number
+          keyword: string
+          last_sent_at: string | null
+          repeat_daily: boolean
+          scheduled_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          daily_time?: string | null
+          enabled?: boolean
+          group_chat_id: number
+          group_title?: string | null
+          id?: number
+          keyword: string
+          last_sent_at?: string | null
+          repeat_daily?: boolean
+          scheduled_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          daily_time?: string | null
+          enabled?: boolean
+          group_chat_id?: number
+          group_title?: string | null
+          id?: number
+          keyword?: string
+          last_sent_at?: string | null
+          repeat_daily?: boolean
+          scheduled_at?: string | null
+        }
+        Relationships: []
+      }
+      tg_groups: {
+        Row: {
+          chat_id: number
+          is_member: boolean
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          chat_id: number
+          is_member?: boolean
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          chat_id?: number
+          is_member?: boolean
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

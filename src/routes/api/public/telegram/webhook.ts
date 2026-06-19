@@ -81,10 +81,21 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
 export const MAIN_KEYBOARD = {
-  keyboard: [["បន្ថែមពាក្យថ្មី"], ["បញ្ជីពាក្យ កែប្រែ&លុប"], ["⏱ កំណត់ Timer លុបសារ"]],
+  keyboard: [
+    ["បន្ថែមពាក្យថ្មី"],
+    ["បញ្ជីពាក្យ កែប្រែ&លុប"],
+    ["⏱ កំណត់ Timer លុបសារ"],
+    ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
+  ],
   resize_keyboard: true,
   persistent: true,
 };
+
+const SCHED_REPEAT_KEYBOARD = {
+  keyboard: [["🔂 មួយដង", "🔁 រាល់ថ្ងៃ"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
 
 const CANCEL_KEYBOARD = {
   keyboard: [["❌ បោះបង់"]],
@@ -397,6 +408,20 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
 
   if (isGroup) {
+    // Track this group so admin can pick it for scheduled sends.
+    supabase
+      .from("tg_groups")
+      .upsert(
+        {
+          chat_id: chatId,
+          title: msg.chat.title ?? null,
+          is_member: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "chat_id" },
+      )
+      .then(() => {}, () => {});
+
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
@@ -405,6 +430,7 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
     }
     return;
   }
+
 
   const isStart = text === "/start" || text?.startsWith("/start@");
 
@@ -529,6 +555,218 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       chat_id: chatId,
       text: "⚠️ សូមជ្រើសរើសពីប៊ូតុង ឬ វាយចំនួនវិនាទីជាលេខ (ឧ: 45)។",
       reply_markup: KEYWORD_TIMER_KEYBOARD,
+    });
+    return;
+  }
+
+  // ===== Schedule send to group =====
+  if (text === "📅 កំណត់ពេលផ្ញើទៅ Group") {
+    const keys = await listKeywords(supabase);
+    if (keys.length === 0) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "📭 មិនទាន់មានពាក្យឆ្លើយតបណាមួយទេ។ សូមបន្ថែមពាក្យជាមុនសិន។",
+        reply_markup: MAIN_KEYBOARD,
+      });
+      return;
+    }
+    await saveState(supabase, chatId, "sched_kw", null, null, []);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "📅 កំណត់ពេលផ្ញើទៅ Group\n\nជំហានទី១: សូមជ្រើសរើស ពាក្យគន្លឹះ ដែលត្រូវផ្ញើ៖",
+      reply_markup: buildListKeyboard(keys),
+    });
+    return;
+  }
+
+  if (s.state === "sched_kw" && text) {
+    const kw = text.trim().toLowerCase();
+    const existing = await getReplyByKeyword(supabase, kw);
+    if (!existing) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⚠️ ពាក្យនេះមិនមានទេ។ សូមជ្រើសរើសពីប៊ូតុង៖",
+      });
+      return;
+    }
+    const { data: groups } = await supabase
+      .from("tg_groups")
+      .select("chat_id, title")
+      .eq("is_member", true)
+      .order("updated_at", { ascending: false });
+    if (!groups || groups.length === 0) {
+      await saveState(supabase, chatId, null, null, null, []);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "📭 មិនទាន់មាន Group ណាមួយដែល bot នៅក្នុងទេ។\n\n👉 សូមបន្ថែម bot ទៅក្នុង group ហើយផ្ញើសារណាមួយក្នុង group មុនសិន ដើម្បីឲ្យ bot ស្គាល់ group នោះ។",
+        reply_markup: MAIN_KEYBOARD,
+      });
+      return;
+    }
+    const titles = groups.map((g: any) => g.title || `Group ${g.chat_id}`);
+    await saveState(supabase, chatId, "sched_group", kw, null, groups as any);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `✅ ពាក្យ: [${kw}]\n\nជំហានទី២: សូមជ្រើសរើស Group៖`,
+      reply_markup: buildListKeyboard(titles),
+    });
+    return;
+  }
+
+  if (s.state === "sched_group" && text) {
+    const kw = s.pending_keyword!;
+    const groups: any[] = Array.isArray(s.pending_replies) ? s.pending_replies : [];
+    const picked = groups.find(
+      (g) => (g.title || `Group ${g.chat_id}`) === text.trim(),
+    );
+    if (!picked) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⚠️ សូមជ្រើសរើស Group ពីប៊ូតុង៖",
+      });
+      return;
+    }
+    await saveState(supabase, chatId, "sched_repeat", kw, String(picked.chat_id), [
+      { group_title: picked.title ?? null },
+    ] as any);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `✅ Group: ${picked.title ?? picked.chat_id}\n\nជំហានទី៣: តើផ្ញើបែបណា?`,
+      reply_markup: SCHED_REPEAT_KEYBOARD,
+    });
+    return;
+  }
+
+  if (s.state === "sched_repeat" && text) {
+    const kw = s.pending_keyword!;
+    const gid = s.selected_keyword!;
+    if (text === "🔂 មួយដង") {
+      await saveState(supabase, chatId, "sched_time_once", kw, gid, s.pending_replies as any);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "📆 សូមវាយម៉ោងផ្ញើ (ម៉ោងភ្នំពេញ)៖\n\nទម្រង់: YYYY-MM-DD HH:MM\nឧ. 2026-06-20 14:30",
+        reply_markup: CANCEL_KEYBOARD,
+      });
+      return;
+    }
+    if (text === "🔁 រាល់ថ្ងៃ") {
+      await saveState(supabase, chatId, "sched_time_daily", kw, gid, s.pending_replies as any);
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "🕒 សូមវាយម៉ោងផ្ញើរាល់ថ្ងៃ (ម៉ោងភ្នំពេញ)៖\n\nទម្រង់: HH:MM\nឧ. 09:00",
+        reply_markup: CANCEL_KEYBOARD,
+      });
+      return;
+    }
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ សូមជ្រើសរើស 🔂 មួយដង ឬ 🔁 រាល់ថ្ងៃ៖",
+      reply_markup: SCHED_REPEAT_KEYBOARD,
+    });
+    return;
+  }
+
+  if (s.state === "sched_time_once" && text) {
+    const m = text.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
+    if (!m) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⚠️ ទម្រង់មិនត្រឹមត្រូវ។ សូមវាយ YYYY-MM-DD HH:MM (ឧ. 2026-06-20 14:30)៖",
+        reply_markup: CANCEL_KEYBOARD,
+      });
+      return;
+    }
+    const [, y, mo, d, hh, mm] = m;
+    // Phnom Penh is UTC+7 (no DST). Convert to UTC by subtracting 7h.
+    const utc = new Date(Date.UTC(+y, +mo - 1, +d, +hh - 7, +mm));
+    if (isNaN(utc.getTime())) {
+      await tgRequest(token, "sendMessage", { chat_id: chatId, text: "⚠️ កាលបរិច្ឆេទមិនត្រឹមត្រូវ។" });
+      return;
+    }
+    const meta: any[] = Array.isArray(s.pending_replies) ? s.pending_replies : [];
+    const gtitle = meta[0]?.group_title ?? null;
+    await supabase.from("scheduled_messages").insert({
+      keyword: s.pending_keyword,
+      group_chat_id: Number(s.selected_keyword),
+      group_title: gtitle,
+      scheduled_at: utc.toISOString(),
+      repeat_daily: false,
+      enabled: true,
+    });
+    await saveState(supabase, chatId, null, null, null, []);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `✅ បានកំណត់!\n📅 ${y}-${mo}-${d} ${hh}:${mm} (ភ្នំពេញ)\n📨 ពាក្យ [${s.pending_keyword}] → ${gtitle ?? s.selected_keyword}\n🔂 មួយដង`,
+      reply_markup: MAIN_KEYBOARD,
+    });
+    return;
+  }
+
+  if (s.state === "sched_time_daily" && text) {
+    const m = text.trim().match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!m) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⚠️ ទម្រង់មិនត្រឹមត្រូវ។ សូមវាយ HH:MM (ឧ. 09:00)៖",
+        reply_markup: CANCEL_KEYBOARD,
+      });
+      return;
+    }
+    const meta: any[] = Array.isArray(s.pending_replies) ? s.pending_replies : [];
+    const gtitle = meta[0]?.group_title ?? null;
+    await supabase.from("scheduled_messages").insert({
+      keyword: s.pending_keyword,
+      group_chat_id: Number(s.selected_keyword),
+      group_title: gtitle,
+      daily_time: `${m[1]}:${m[2]}`,
+      repeat_daily: true,
+      enabled: true,
+    });
+    await saveState(supabase, chatId, null, null, null, []);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `✅ បានកំណត់!\n🕒 រាល់ថ្ងៃ ម៉ោង ${m[1]}:${m[2]} (ភ្នំពេញ)\n📨 ពាក្យ [${s.pending_keyword}] → ${gtitle ?? s.selected_keyword}`,
+      reply_markup: MAIN_KEYBOARD,
+    });
+    return;
+  }
+
+  if (text === "📋 បញ្ជី Schedule") {
+    const { data: rows } = await supabase
+      .from("scheduled_messages")
+      .select("id, keyword, group_title, group_chat_id, scheduled_at, daily_time, repeat_daily, enabled")
+      .eq("enabled", true)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (!rows || rows.length === 0) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "📭 មិនទាន់មាន Schedule ណាមួយទេ។",
+        reply_markup: MAIN_KEYBOARD,
+      });
+      return;
+    }
+    const lines = rows.map((r: any, i: number) => {
+      const when = r.repeat_daily
+        ? `🔁 រាល់ថ្ងៃ ${r.daily_time} (PP)`
+        : `🔂 ${new Date(new Date(r.scheduled_at).getTime() + 7 * 3600_000).toISOString().slice(0, 16).replace("T", " ")} (PP)`;
+      return `${i + 1}. [${r.keyword}] → ${r.group_title ?? r.group_chat_id}\n   ${when}\n   🗑 លុប: /del_${r.id}`;
+    });
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `📋 បញ្ជី Schedule (${rows.length})\n\n${lines.join("\n\n")}`,
+      reply_markup: MAIN_KEYBOARD,
+    });
+    return;
+  }
+
+  if (text && /^\/del_\d+$/.test(text.trim())) {
+    const id = Number(text.trim().slice(5));
+    await supabase.from("scheduled_messages").delete().eq("id", id);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: `🗑 បានលុប Schedule #${id}`,
+      reply_markup: MAIN_KEYBOARD,
     });
     return;
   }

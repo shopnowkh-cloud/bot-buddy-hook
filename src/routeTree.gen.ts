@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as MiniappRouteImport } from './routes/miniapp'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
+import { Route as ApiPublicTelegramSweepSchedulesRouteImport } from './routes/api/public/telegram/sweep-schedules'
 import { Route as ApiPublicTelegramSweepDeletionsRouteImport } from './routes/api/public/telegram/sweep-deletions'
 import { Route as ApiPublicMiniappApiRouteImport } from './routes/api/public/miniapp/api'
 
@@ -31,6 +32,12 @@ const ApiPublicTelegramWebhookRoute =
     path: '/api/public/telegram/webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicTelegramSweepSchedulesRoute =
+  ApiPublicTelegramSweepSchedulesRouteImport.update({
+    id: '/api/public/telegram/sweep-schedules',
+    path: '/api/public/telegram/sweep-schedules',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicTelegramSweepDeletionsRoute =
   ApiPublicTelegramSweepDeletionsRouteImport.update({
     id: '/api/public/telegram/sweep-deletions',
@@ -48,6 +55,7 @@ export interface FileRoutesByFullPath {
   '/miniapp': typeof MiniappRoute
   '/api/public/miniapp/api': typeof ApiPublicMiniappApiRoute
   '/api/public/telegram/sweep-deletions': typeof ApiPublicTelegramSweepDeletionsRoute
+  '/api/public/telegram/sweep-schedules': typeof ApiPublicTelegramSweepSchedulesRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
@@ -55,6 +63,7 @@ export interface FileRoutesByTo {
   '/miniapp': typeof MiniappRoute
   '/api/public/miniapp/api': typeof ApiPublicMiniappApiRoute
   '/api/public/telegram/sweep-deletions': typeof ApiPublicTelegramSweepDeletionsRoute
+  '/api/public/telegram/sweep-schedules': typeof ApiPublicTelegramSweepSchedulesRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesById {
@@ -63,6 +72,7 @@ export interface FileRoutesById {
   '/miniapp': typeof MiniappRoute
   '/api/public/miniapp/api': typeof ApiPublicMiniappApiRoute
   '/api/public/telegram/sweep-deletions': typeof ApiPublicTelegramSweepDeletionsRoute
+  '/api/public/telegram/sweep-schedules': typeof ApiPublicTelegramSweepSchedulesRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRouteTypes {
@@ -72,6 +82,7 @@ export interface FileRouteTypes {
     | '/miniapp'
     | '/api/public/miniapp/api'
     | '/api/public/telegram/sweep-deletions'
+    | '/api/public/telegram/sweep-schedules'
     | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -79,6 +90,7 @@ export interface FileRouteTypes {
     | '/miniapp'
     | '/api/public/miniapp/api'
     | '/api/public/telegram/sweep-deletions'
+    | '/api/public/telegram/sweep-schedules'
     | '/api/public/telegram/webhook'
   id:
     | '__root__'
@@ -86,6 +98,7 @@ export interface FileRouteTypes {
     | '/miniapp'
     | '/api/public/miniapp/api'
     | '/api/public/telegram/sweep-deletions'
+    | '/api/public/telegram/sweep-schedules'
     | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
 }
@@ -94,6 +107,7 @@ export interface RootRouteChildren {
   MiniappRoute: typeof MiniappRoute
   ApiPublicMiniappApiRoute: typeof ApiPublicMiniappApiRoute
   ApiPublicTelegramSweepDeletionsRoute: typeof ApiPublicTelegramSweepDeletionsRoute
+  ApiPublicTelegramSweepSchedulesRoute: typeof ApiPublicTelegramSweepSchedulesRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
 
@@ -120,6 +134,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTelegramWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/telegram/sweep-schedules': {
+      id: '/api/public/telegram/sweep-schedules'
+      path: '/api/public/telegram/sweep-schedules'
+      fullPath: '/api/public/telegram/sweep-schedules'
+      preLoaderRoute: typeof ApiPublicTelegramSweepSchedulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/telegram/sweep-deletions': {
       id: '/api/public/telegram/sweep-deletions'
       path: '/api/public/telegram/sweep-deletions'
@@ -142,6 +163,7 @@ const rootRouteChildren: RootRouteChildren = {
   MiniappRoute: MiniappRoute,
   ApiPublicMiniappApiRoute: ApiPublicMiniappApiRoute,
   ApiPublicTelegramSweepDeletionsRoute: ApiPublicTelegramSweepDeletionsRoute,
+  ApiPublicTelegramSweepSchedulesRoute: ApiPublicTelegramSweepSchedulesRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
 export const routeTree = rootRouteImport

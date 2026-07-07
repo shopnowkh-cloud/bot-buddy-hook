@@ -19,6 +19,12 @@ export const Route = createFileRoute("/api/public/telegram/register-webhook")({
 
         const url = new URL(request.url);
         const origin = url.origin;
+        if (url.protocol !== "https:") {
+          return new Response(
+            JSON.stringify({ ok: false, error: "Webhook registration requires the HTTPS preview or published URL" }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
+        }
         const webhookUrl = `${origin}/api/public/telegram/webhook`;
         const secretToken = createHash("sha256").update(secret).digest("hex");
 

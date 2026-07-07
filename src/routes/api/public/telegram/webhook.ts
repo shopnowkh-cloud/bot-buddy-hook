@@ -163,25 +163,30 @@ function parseTimerLabel(label: string | undefined): number | null {
 // ---------------------------------------------------------------------------
 // Reply content extraction (same shape as bot.js)
 // ---------------------------------------------------------------------------
-type ReplyContent = {
-  type: "copy";
-  from_chat_id: number;
-  message_id: number;
-  forward: boolean;
-};
+type ReplyContent =
+  | { type: "copy"; from_chat_id: number; message_id: number; forward: boolean }
+  | { type: "text"; content: string }
+  | { type: "photo"; content: string; caption?: string }
+  | { type: "video"; content: string; caption?: string }
+  | { type: "voice"; content: string }
+  | { type: "audio"; content: string; caption?: string }
+  | { type: "document"; content: string; caption?: string }
+  | { type: "sticker"; content: string };
 
 function getReplyContent(msg: any): ReplyContent | null {
   const isForwarded = !!(msg.forward_from || msg.forward_origin || msg.forward_from_chat);
-  const hasContent = !!(
-    msg.text ||
-    msg.photo ||
-    msg.video ||
-    msg.voice ||
-    msg.audio ||
-    msg.document ||
-    msg.sticker
-  );
-  if (hasContent) {
+  if (msg.text) return { type: "text", content: msg.text };
+  if (msg.photo?.length) {
+    const bestPhoto = msg.photo[msg.photo.length - 1];
+    return { type: "photo", content: bestPhoto.file_id, caption: msg.caption };
+  }
+  if (msg.video?.file_id) return { type: "video", content: msg.video.file_id, caption: msg.caption };
+  if (msg.voice?.file_id) return { type: "voice", content: msg.voice.file_id };
+  if (msg.audio?.file_id) return { type: "audio", content: msg.audio.file_id, caption: msg.caption };
+  if (msg.document?.file_id) return { type: "document", content: msg.document.file_id, caption: msg.caption };
+  if (msg.sticker?.file_id) return { type: "sticker", content: msg.sticker.file_id };
+
+  if (isForwarded) {
     return {
       type: "copy",
       from_chat_id: msg.chat.id,
@@ -238,6 +243,19 @@ async function sendReply(
       caption: reply.caption,
       ...extra,
     });
+  } else if (reply.type === "document") {
+    res = await tgRequest(token, "sendDocument", {
+      chat_id: chatId,
+      document: reply.content,
+      caption: reply.caption,
+      ...extra,
+    });
+  } else if (reply.type === "sticker") {
+    res = await tgRequest(token, "sendSticker", { chat_id: chatId, sticker: reply.content, ...extra });
+  }
+
+  if (!res?.ok) {
+    console.error("Telegram send failed", { method: reply.type, chatId, description: res?.description });
   }
 
   return res?.ok && res.result?.message_id && autoDeleteSeconds > 0

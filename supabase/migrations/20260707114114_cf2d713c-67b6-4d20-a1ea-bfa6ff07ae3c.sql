@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.pending_deletions_delete_at_idx;

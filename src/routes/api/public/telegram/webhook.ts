@@ -287,7 +287,8 @@ async function sendReply(
 
 async function insertPendingDeletions(supabase: any, rows: any[]) {
   if (rows.length > 0) {
-    await supabase.from("pending_deletions").insert(rows);
+    // Fire-and-forget: don't block webhook response on this bookkeeping insert
+    supabase.from("pending_deletions").insert(rows).then(() => {}, (e: any) => console.error("pending_deletions insert failed", e));
   }
 }
 

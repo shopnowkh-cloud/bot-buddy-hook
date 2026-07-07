@@ -4,13 +4,17 @@ import { createFileRoute } from "@tanstack/react-router";
 const PP_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 async function tgSend(token: string, method: string, body: any) {
-  return fetch(`https://api.telegram.org/bot${token}/${method}`, {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
     .then((r) => r.json())
     .catch(() => null);
+  if (!response?.ok) {
+    console.error("Telegram schedule send failed", { method, description: response?.description });
+  }
+  return response;
 }
 
 async function sendKeywordToGroup(
@@ -36,6 +40,18 @@ async function sendKeywordToGroup(
       });
     } else if (item?.type === "text") {
       await tgSend(token, "sendMessage", { chat_id: groupId, text: item.content });
+    } else if (item?.type === "photo") {
+      await tgSend(token, "sendPhoto", { chat_id: groupId, photo: item.content, caption: item.caption });
+    } else if (item?.type === "video") {
+      await tgSend(token, "sendVideo", { chat_id: groupId, video: item.content, caption: item.caption });
+    } else if (item?.type === "voice") {
+      await tgSend(token, "sendVoice", { chat_id: groupId, voice: item.content });
+    } else if (item?.type === "audio") {
+      await tgSend(token, "sendAudio", { chat_id: groupId, audio: item.content, caption: item.caption });
+    } else if (item?.type === "document") {
+      await tgSend(token, "sendDocument", { chat_id: groupId, document: item.content, caption: item.caption });
+    } else if (item?.type === "sticker") {
+      await tgSend(token, "sendSticker", { chat_id: groupId, sticker: item.content });
     }
   }
   return true;

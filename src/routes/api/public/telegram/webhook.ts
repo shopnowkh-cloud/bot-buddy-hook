@@ -31,9 +31,11 @@ function getAdminClient() {
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry> };
-const REPLY_CACHE_TTL_MS = 1_500;
+const REPLY_CACHE_TTL_MS = 30_000;
+const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
+const groupTrackCache = new Map<number, number>();
 
 export function clearReplyCache() {
   replyCache = null;
@@ -427,18 +429,23 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
 
   if (isGroup) {
     // Track this group so admin can pick it for scheduled sends.
-    supabase
-      .from("tg_groups")
-      .upsert(
-        {
-          chat_id: chatId,
-          title: msg.chat.title ?? null,
-          is_member: true,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "chat_id" },
-      )
-      .then(() => {}, () => {});
+    const now = Date.now();
+    const lastTrackedAt = groupTrackCache.get(chatId) ?? 0;
+    if (now - lastTrackedAt > GROUP_TRACK_TTL_MS) {
+      groupTrackCache.set(chatId, now);
+      supabase
+        .from("tg_groups")
+        .upsert(
+          {
+            chat_id: chatId,
+            title: msg.chat.title ?? null,
+            is_member: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "chat_id" },
+        )
+        .then(() => {}, () => groupTrackCache.delete(chatId));
+    }
 
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());

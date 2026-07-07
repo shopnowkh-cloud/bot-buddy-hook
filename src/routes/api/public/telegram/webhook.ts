@@ -20,8 +20,12 @@ function safeEqual(a: string, b: string): boolean {
 
 type TgRequestBody = Record<string, unknown>;
 
-// Cache the admin client module load across requests (warm isolate) for lower latency
-let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null = null;
+// Preload admin client module at isolate startup so first webhook call skips import cost
+let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null =
+  import("@/integrations/supabase/client.server").catch((e) => {
+    _adminClientPromise = null;
+    throw e;
+  }) as any;
 function getAdminClient() {
   if (!_adminClientPromise) {
     _adminClientPromise = import("@/integrations/supabase/client.server");
@@ -31,7 +35,7 @@ function getAdminClient() {
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry> };
-const REPLY_CACHE_TTL_MS = 30_000;
+const REPLY_CACHE_TTL_MS = 5 * 60_000; // 5 min hot cache
 const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
@@ -42,11 +46,8 @@ export function clearReplyCache() {
   replyCachePromise = null;
 }
 
-async function loadReplyCache(supabase: any): Promise<ReplyCache> {
-  const now = Date.now();
-  if (replyCache && replyCache.expiresAt > now) return replyCache;
+function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
-
   replyCachePromise = Promise.all([
     supabase.from("replies").select("keyword, content, delete_after_seconds").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
@@ -65,10 +66,25 @@ async function loadReplyCache(supabase: any): Promise<ReplyCache> {
     };
     replyCachePromise = null;
     return replyCache;
+  }).catch((e) => {
+    replyCachePromise = null;
+    throw e;
   });
-
   return replyCachePromise;
 }
+
+async function loadReplyCache(supabase: any): Promise<ReplyCache> {
+  const now = Date.now();
+  if (replyCache) {
+    // Stale-while-revalidate: serve stale immediately, refresh in background
+    if (replyCache.expiresAt <= now && !replyCachePromise) {
+      fetchReplyCache(supabase).catch(() => {});
+    }
+    return replyCache;
+  }
+  return fetchReplyCache(supabase);
+}
+
 
 async function tgRequest(token: string, method: string, body: TgRequestBody) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
@@ -271,7 +287,8 @@ async function sendReply(
 
 async function insertPendingDeletions(supabase: any, rows: any[]) {
   if (rows.length > 0) {
-    await supabase.from("pending_deletions").insert(rows);
+    // Fire-and-forget: don't block webhook response on this bookkeeping insert
+    supabase.from("pending_deletions").insert(rows).then(() => {}, (e: any) => console.error("pending_deletions insert failed", e));
   }
 }
 

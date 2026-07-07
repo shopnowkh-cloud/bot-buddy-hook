@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS pending_deletions_delete_at_idx ON public.pending_deletions (delete_at);

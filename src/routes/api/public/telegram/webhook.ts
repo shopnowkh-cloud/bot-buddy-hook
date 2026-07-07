@@ -1038,10 +1038,78 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("Bad request", { status: 400 });
         }
 
-        // Always 200 OK quickly so Telegram doesn't retry
+        const msg = update.message ?? update.edited_message;
+
+        // ---- FAST PATH: group keyword match with single reply ----
+        // Respond to Telegram with the send method inline in this HTTP
+        // response body — saves one full API round-trip per reply.
+        try {
+          if (msg?.chat?.id && (msg.chat.type === "group" || msg.chat.type === "supergroup") && msg.text) {
+            const { supabaseAdmin } = await getAdminClient();
+            const cache = replyCache; // sync peek; only take fast path when cache is hot
+            if (cache) {
+              const match = cache.replies.get(msg.text.trim().toLowerCase());
+              if (match && !Array.isArray(match.content)) {
+                const chatId = msg.chat.id;
+                const effective = match.delete_after_seconds ?? cache.config;
+
+                // Fire-and-forget: delete user message + group tracking + schedule bot-message deletion
+                fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ chat_id: chatId, message_id: msg.message_id }),
+                }).catch(() => {});
+
+                const now = Date.now();
+                if (now - (groupTrackCache.get(chatId) ?? 0) > GROUP_TRACK_TTL_MS) {
+                  groupTrackCache.set(chatId, now);
+                  supabaseAdmin
+                    .from("tg_groups")
+                    .upsert(
+                      { chat_id: chatId, title: msg.chat.title ?? null, is_member: true, updated_at: new Date().toISOString() },
+                      { onConflict: "chat_id" },
+                    )
+                    .then(() => {}, () => groupTrackCache.delete(chatId));
+                }
+
+                const r = match.content;
+                const inline: any = { chat_id: chatId };
+                if (r.type === "text") { inline.method = "sendMessage"; inline.text = r.content; }
+                else if (r.type === "photo") { inline.method = "sendPhoto"; inline.photo = r.content; if (r.caption) inline.caption = r.caption; }
+                else if (r.type === "video") { inline.method = "sendVideo"; inline.video = r.content; if (r.caption) inline.caption = r.caption; }
+                else if (r.type === "voice") { inline.method = "sendVoice"; inline.voice = r.content; }
+                else if (r.type === "audio") { inline.method = "sendAudio"; inline.audio = r.content; if (r.caption) inline.caption = r.caption; }
+                else if (r.type === "document") { inline.method = "sendDocument"; inline.document = r.content; if (r.caption) inline.caption = r.caption; }
+                else if (r.type === "sticker") { inline.method = "sendSticker"; inline.sticker = r.content; }
+                else if (r.type === "copy") {
+                  inline.method = r.forward ? "forwardMessage" : "copyMessage";
+                  inline.from_chat_id = r.from_chat_id;
+                  inline.message_id = r.message_id;
+                }
+
+                if (inline.method) {
+                  // We can't get the sent message_id from an inline response,
+                  // so auto-delete for inline sends is best-effort skipped.
+                  // (Rare tradeoff for maximum speed on the hot path.)
+                  if (effective > 0) {
+                    // Fallback to normal path so pending_deletions is recorded
+                  } else {
+                    return new Response(JSON.stringify(inline), {
+                      status: 200,
+                      headers: { "Content-Type": "application/json" },
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Telegram fast-path error:", err);
+        }
+
+        // ---- Normal path ----
         try {
           const { supabaseAdmin } = await getAdminClient();
-          const msg = update.message ?? update.edited_message;
           if (msg?.chat?.id) {
             await handleMessage(token, adminId, supabaseAdmin, msg);
           }
@@ -1057,3 +1125,4 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
     },
   },
 });
+

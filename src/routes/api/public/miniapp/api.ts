@@ -48,6 +48,11 @@ const RequestSchema = z.discriminatedUnion("action", [
     action: z.literal("reorder_replies"),
     keywords: z.array(z.string().min(1).max(255)).min(1).max(500),
   }),
+  z.object({ action: z.literal("list_admins") }),
+  z.object({ action: z.literal("add_admin_id"), admin_id: z.number().int().positive() }),
+  z.object({ action: z.literal("remove_admin_id"), admin_id: z.number().int().positive() }),
+  z.object({ action: z.literal("add_access_token"), token: z.string().min(8).max(256) }),
+  z.object({ action: z.literal("remove_access_token"), token: z.string().min(1).max(256) }),
 ]);
 
 function jerr(status: number, msg: string) {

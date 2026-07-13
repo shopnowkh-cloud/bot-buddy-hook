@@ -63,10 +63,37 @@ type PendingRow = {
   created_at: string;
 };
 
+function getInitDataFromLocation(): string {
+  if (typeof window === "undefined") return "";
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const sources = [hash, window.location.search.startsWith("?") ? window.location.search.slice(1) : window.location.search];
+  for (const source of sources) {
+    if (!source) continue;
+    const params = new URLSearchParams(source);
+    const webAppData = params.get("tgWebAppData");
+    if (webAppData) return decodeURIComponent(webAppData);
+  }
+  return "";
+}
+
 function getInitData(): string {
   if (typeof window === "undefined") return "";
   const tg = (window as any).Telegram?.WebApp;
-  return tg?.initData ?? "";
+  return tg?.initData || getInitDataFromLocation();
+}
+
+function hasAdminToken(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.localStorage.getItem("admin_token"));
+}
+
+async function waitForTelegramInitData(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (getInitData() || hasAdminToken()) return;
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (getInitData() || hasAdminToken()) return;
+  }
 }
 function hapticImpact(style: "light" | "medium" | "heavy" = "light") {
   try {
@@ -115,14 +142,22 @@ function MiniApp() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      try { tg.setHeaderColor("bg_color"); } catch {}
-      try { tg.setBackgroundColor("#17212b"); } catch {}
+    let cancelled = false;
+    async function boot() {
+      await waitForTelegramInitData();
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        try { tg.setHeaderColor("bg_color"); } catch {}
+        try { tg.setBackgroundColor("#17212b"); } catch {}
+      }
+      if (!cancelled) setReady(true);
     }
-    setReady(true);
+    boot();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const meQ = useQuery({

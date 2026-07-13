@@ -464,11 +464,31 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
         .then(() => {}, () => groupTrackCache.delete(chatId));
     }
 
+    // Build persistent keyword keyboard (shown to all group members, stays forever)
+    const groupKeys = await listKeywords(supabase);
+    const groupKb = buildKeywordKeyboard(groupKeys);
+
+    // When bot is added to the group → show the keyboard once
+    const botAdded = Array.isArray(msg.new_chat_members) &&
+      msg.new_chat_members.some((m: any) => m?.is_bot);
+    const isStartCmd = text === "/start" || text?.startsWith("/start@");
+
+    if ((botAdded || isStartCmd) && groupKb) {
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⌨️",
+        reply_markup: groupKb,
+      });
+      return;
+    }
+
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
-        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
+        // Re-attach keyboard so it persists forever in the group
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, groupKb);
       }
+      // No match → stay silent (only the keyboard is visible)
     }
     return;
   }
@@ -1088,9 +1108,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
                 }
 
                 if (inline.method) {
+                  // Attach persistent keyword keyboard so it stays forever in the group
+                  const keys = Array.from(cache.replies.keys());
+                  const kb = buildKeywordKeyboard(keys);
+                  if (kb) inline.reply_markup = kb;
                   // We can't get the sent message_id from an inline response,
                   // so auto-delete for inline sends is best-effort skipped.
-                  // (Rare tradeoff for maximum speed on the hot path.)
                   if (effective > 0) {
                     // Fallback to normal path so pending_deletions is recorded
                   } else {

@@ -70,6 +70,7 @@ function normalizeInitData(raw: string | null | undefined): string {
   if (!raw) return "";
   const value = raw.trim();
   if (!value) return "";
+  if (value.includes("hash=")) return value;
   try {
     const decoded = decodeURIComponent(value);
     return decoded.includes("hash=") ? decoded : value;

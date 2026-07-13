@@ -140,7 +140,6 @@ const POSITION_KEYBOARD = {
 // immediately so admin sees the new order right away while still being able
 // to press 🔼/🔽/◀️/▶️ to continue moving.
 function buildPositionKeyboard(keys: string[]) {
-  const kwRows: string[][] = [];
   const kwRows: string[][] = keys.map((k) => [k]);
   return {
     keyboard: [

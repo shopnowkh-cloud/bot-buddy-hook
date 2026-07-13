@@ -66,26 +66,8 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const initData = request.headers.get("X-Telegram-Init-Data") ?? "";
-        const adminToken = request.headers.get("X-Admin-Token") ?? "";
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        if (!token) return jerr(500, "bot token missing");
-
-        const { isValidAccessToken, isAdminUserId } = await import("@/lib/admin-config.server");
-
-        let authUser: { id: number; first_name?: string; username?: string } | null = null;
-
-        // Path A: admin access token (env fallback OR any token from admin_settings)
-        if (adminToken && (await isValidAccessToken(adminToken))) {
-          authUser = { id: 0, first_name: "Admin", username: "admin" };
-        } else {
-          // Path B: Telegram initData
-          const vv = verifyInitData(initData, token);
-          if (!vv.ok || !vv.user) return jerr(401, `unauthorized: ${vv.reason ?? "missing initData"}`);
-          if (!(await isAdminUserId(vv.user.id))) return jerr(403, "not admin");
-          authUser = vv.user;
-        }
-        const v = { ok: true as const, user: authUser };
+        // Open access — Mini App is public, no auth required.
+        const v = { ok: true as const, user: { id: 0, first_name: "Admin", username: "admin" } };
 
         let body: unknown;
         try {

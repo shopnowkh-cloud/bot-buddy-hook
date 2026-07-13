@@ -49,7 +49,7 @@ export function clearReplyCache() {
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
-    supabase.from("replies").select("keyword, content, delete_after_seconds").order("created_at"),
+    supabase.from("replies").select("keyword, content, delete_after_seconds, position").order("position").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();

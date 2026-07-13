@@ -216,8 +216,8 @@ function TabBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition active:scale-95 ${
-        active ? "bg-[var(--tg-btn)] text-white" : "text-[var(--tg-hint)]"
+      className={`tg-press flex flex-col items-center justify-center gap-1 py-2 rounded-xl ${
+        active ? "tg-tab-active bg-[var(--tg-btn)] text-white" : "text-[var(--tg-hint)]"
       }`}
     >
       <span className="[&_svg]:h-6 [&_svg]:w-6">{icon}</span>

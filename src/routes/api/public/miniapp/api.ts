@@ -190,6 +190,52 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
               if (firstErr?.error) return jerr(500, firstErr.error.message);
               return Response.json({ ok: true });
             }
+            case "list_admins": {
+              const { getAdminConfig } = await import("@/lib/admin-config.server");
+              const cfg = await getAdminConfig(true);
+              const envIds = process.env.ADMIN_CHAT_ID ? [Number(process.env.ADMIN_CHAT_ID)] : [];
+              const envToken = process.env.ADMIN_ACCESS_TOKEN ?? "";
+              return Response.json({
+                admin_ids: cfg.adminIds.map((id) => ({
+                  id,
+                  from_env: envIds.includes(Number(id)),
+                })),
+                access_tokens: cfg.accessTokens.map((t) => ({
+                  // Never return full token — masked preview only.
+                  preview: t.length <= 8 ? "••••" : `${t.slice(0, 4)}…${t.slice(-4)}`,
+                  token: t,
+                  from_env: t === envToken,
+                })),
+              });
+            }
+            case "add_admin_id": {
+              const { addAdminId } = await import("@/lib/admin-config.server");
+              await addAdminId(req.admin_id);
+              return Response.json({ ok: true });
+            }
+            case "remove_admin_id": {
+              const envIds = process.env.ADMIN_CHAT_ID ? [Number(process.env.ADMIN_CHAT_ID)] : [];
+              if (envIds.includes(Number(req.admin_id))) {
+                return jerr(400, "cannot remove env-managed admin (edit ADMIN_CHAT_ID secret)");
+              }
+              const { removeAdminId } = await import("@/lib/admin-config.server");
+              await removeAdminId(req.admin_id);
+              return Response.json({ ok: true });
+            }
+            case "add_access_token": {
+              const { addAccessToken } = await import("@/lib/admin-config.server");
+              await addAccessToken(req.token);
+              return Response.json({ ok: true });
+            }
+            case "remove_access_token": {
+              const envToken = process.env.ADMIN_ACCESS_TOKEN ?? "";
+              if (envToken && req.token === envToken) {
+                return jerr(400, "cannot remove env-managed token (edit ADMIN_ACCESS_TOKEN secret)");
+              }
+              const { removeAccessToken } = await import("@/lib/admin-config.server");
+              await removeAccessToken(req.token);
+              return Response.json({ ok: true });
+            }
           }
         } catch (e: any) {
           return jerr(500, e?.message ?? "server error");

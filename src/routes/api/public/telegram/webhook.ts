@@ -100,7 +100,7 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // ---------------------------------------------------------------------------
 const MINIAPP_URL =
   process.env.TELEGRAM_MINIAPP_URL ||
-  "https://project--b2c164c8-5957-4177-a231-1b8599b547e9.lovable.app/miniapp";
+  "https://bot-buddy-hook.lovable.app/miniapp";
 
 export const MAIN_KEYBOARD = {
   keyboard: [

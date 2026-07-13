@@ -80,12 +80,15 @@ function hapticNotify(type: "success" | "warning" | "error") {
 }
 
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Telegram-Init-Data": getInitData(),
+  };
+  const adminToken = typeof window !== "undefined" ? window.localStorage.getItem("admin_token") ?? "" : "";
+  if (adminToken) headers["X-Admin-Token"] = adminToken;
   const res = await fetch("/api/public/miniapp/api", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Telegram-Init-Data": getInitData(),
-    },
+    headers,
     body: JSON.stringify({ action, ...payload }),
   });
   if (!res.ok) {

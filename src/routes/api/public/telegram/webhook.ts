@@ -106,7 +106,7 @@ export const MAIN_KEYBOARD = {
     ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
   ],
   resize_keyboard: true,
-  persistent: true,
+  is_persistent: true,
 };
 
 const SCHED_REPEAT_KEYBOARD = {
@@ -303,7 +303,7 @@ export function buildKeywordKeyboard(keys: string[]) {
   if (keys.length === 0) return undefined;
   const rows: string[][] = [];
   for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
-  return { keyboard: rows, resize_keyboard: true, persistent: true };
+  return { keyboard: rows, resize_keyboard: true, is_persistent: true };
 }
 
 async function deleteAndSendMatch(

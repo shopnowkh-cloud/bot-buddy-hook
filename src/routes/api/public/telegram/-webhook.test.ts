@@ -83,7 +83,7 @@ describe("buildKeywordKeyboard", () => {
     expect(kb).toEqual({
       keyboard: [["a", "b"], ["c"]],
       resize_keyboard: true,
-      persistent: true,
+      is_persistent: true,
     });
   });
 });
@@ -122,7 +122,7 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
     expect(sendMsg!.body.reply_markup).toEqual({
       keyboard: [["hi"]],
       resize_keyboard: true,
-      persistent: true,
+      is_persistent: true,
     });
   });
 

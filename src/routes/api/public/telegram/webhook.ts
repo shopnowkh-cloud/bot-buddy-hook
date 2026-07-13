@@ -102,19 +102,9 @@ const MINIAPP_BASE_URL =
   process.env.TELEGRAM_MINIAPP_URL ||
   "https://bot-buddy-hook.lovable.app/miniapp";
 
-// Embed admin token in Mini App URL. Safe because MAIN_KEYBOARD is only ever
-// sent in the admin's private chat (handleMessage rejects non-admin senders
-// before delivering this keyboard).
-const MINIAPP_URL = (() => {
-  const t = process.env.ADMIN_ACCESS_TOKEN;
-  if (!t) return MINIAPP_BASE_URL;
-  const sep = MINIAPP_BASE_URL.includes("?") ? "&" : "?";
-  return `${MINIAPP_BASE_URL}${sep}t=${encodeURIComponent(t)}`;
-})();
-
 export const MAIN_KEYBOARD = {
   keyboard: [
-    [{ text: "🧩 បើក Mini App", web_app: { url: MINIAPP_URL } }],
+    [{ text: "🧩 បើក Mini App", web_app: { url: MINIAPP_BASE_URL } }],
     ["បន្ថែមពាក្យថ្មី"],
     ["បញ្ជីពាក្យ កែប្រែ&លុប"],
     ["⏱ កំណត់ Timer លុបសារ"],

@@ -975,13 +975,18 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       );
       clearReplyCache();
 
+      const newList = updates.map((u) => String(u.keyword).toLowerCase());
+      const preview = newList
+        .map((k, i) => (i === newIdx ? `👉 ${i + 1}. ${k}` : `   ${i + 1}. ${k}`))
+        .join("\n");
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}`,
+        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 Preview លំដាប់ថ្មី៖\n${preview}`,
         reply_markup: POSITION_KEYBOARD,
       });
       return;
     }
+
 
 
     if (text === "✏️ កែ") {

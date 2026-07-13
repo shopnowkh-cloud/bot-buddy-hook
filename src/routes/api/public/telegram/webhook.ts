@@ -945,10 +945,10 @@ export async function handleMessage(token: string, adminId: number, supabase: an
 
 
     const isDirection =
-      text === "⬆️ ឡើងលើ" ||
-      text === "⬇️ ចុះក្រោម" ||
-      text === "⏫ ទៅដើម" ||
-      text === "⏬ ទៅចុង";
+      text === "🔼 ឡើងលើ" ||
+      text === "🔽 ចុះក្រោម" ||
+      text === "◀️ ទៅដើម" ||
+      text === "▶️ ទៅចុង";
     const numericJump = text && /^\d+$/.test(text.trim()) ? parseInt(text.trim(), 10) : null;
     if (isDirection || numericJump !== null) {
       const { data: rows } = await supabase
@@ -967,10 +967,10 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       const normalized = list.map((r, i) => ({ keyword: r.keyword, position: (i + 1) * 10 }));
 
       let newIdx = idx;
-      if (text === "⬆️ ឡើងលើ") newIdx = Math.max(0, idx - 1);
-      else if (text === "⬇️ ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
-      else if (text === "⏫ ទៅដើម") newIdx = 0;
-      else if (text === "⏬ ទៅចុង") newIdx = list.length - 1;
+      if (text === "🔼 ឡើងលើ") newIdx = Math.max(0, idx - 1);
+      else if (text === "🔽 ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
+      else if (text === "◀️ ទៅដើម") newIdx = 0;
+      else if (text === "▶️ ទៅចុង") newIdx = list.length - 1;
       else if (numericJump !== null) {
         if (numericJump < 1 || numericJump > list.length) {
           const curList = normalized.map((r) => String(r.keyword).toLowerCase());

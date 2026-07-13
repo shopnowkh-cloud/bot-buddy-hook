@@ -19,6 +19,8 @@
  */
 
 @theme inline {
+  --font-sans: "Kantumruy Pro", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Kantumruy Pro", ui-serif, serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

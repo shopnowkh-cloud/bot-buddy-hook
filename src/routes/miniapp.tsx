@@ -53,6 +53,7 @@ type Reply = {
   content: ContentItem[];
   delete_after_seconds: number | null;
   updated_at: string;
+  position?: number;
 };
 type PendingRow = {
   id: number;

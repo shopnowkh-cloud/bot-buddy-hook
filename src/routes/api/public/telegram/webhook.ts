@@ -135,6 +135,24 @@ const POSITION_KEYBOARD = {
   resize_keyboard: true,
 };
 
+// Combined keyboard: keyword rows (current order) + position controls at bottom.
+// Sending this in ONE message makes Telegram refresh the reply keyboard
+// immediately so admin sees the new order right away while still being able
+// to press ⬆️/⬇️/⏫/⏬ to continue moving.
+function buildPositionKeyboard(keys: string[]) {
+  const kwRows: string[][] = [];
+  for (let i = 0; i < keys.length; i += 2) kwRows.push(keys.slice(i, i + 2));
+  return {
+    keyboard: [
+      ...kwRows,
+      ["⬆️ ឡើងលើ", "⬇️ ចុះក្រោម"],
+      ["⏫ ទៅដើម", "⏬ ទៅចុង"],
+      ["❌ បោះបង់"],
+    ],
+    resize_keyboard: true,
+  };
+}
+
 const TIMER_KEYBOARD = {
   keyboard: [
     ["បិទ (មិនលុប)"],
@@ -920,7 +938,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\n📋 Preview លំដាប់៖\n${preview}\n\nសូមជ្រើសរើសទិសផ្លាស់ទី៖`,
-        reply_markup: POSITION_KEYBOARD,
+        reply_markup: buildPositionKeyboard(keys),
       });
       return;
     }
@@ -954,10 +972,11 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       else if (text === "⏬ ទៅចុង") newIdx = list.length - 1;
 
       if (newIdx === idx && list.length > 1) {
+        const curList = normalized.map((r) => String(r.keyword).toLowerCase());
         await tgRequest(token, "sendMessage", {
           chat_id: chatId,
           text: `⚠️ ពាក្យ [${kw}] នៅ${text === "⬆️ ឡើងលើ" || text === "⏫ ទៅដើម" ? "ដើម" : "ចុង"}បញ្ជីរួចហើយ។`,
-          reply_markup: POSITION_KEYBOARD,
+          reply_markup: buildPositionKeyboard(curList),
         });
         return;
       }
@@ -967,7 +986,6 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       normalized.splice(newIdx, 0, moved);
       // Re-assign positions
       const updates = normalized.map((r, i) => ({ keyword: r.keyword, position: (i + 1) * 10 }));
-      // Batch update via upsert on keyword (need content NOT NULL — so use individual updates)
       await Promise.all(
         updates.map((u) =>
           supabase.from("replies").update({ position: u.position }).eq("keyword", u.keyword),
@@ -979,24 +997,12 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       const preview = newList
         .map((k, i) => (i === newIdx ? `👉 ${i + 1}. ${k}` : `   ${i + 1}. ${k}`))
         .join("\n");
+      // Single message: shows new order in reply keyboard immediately +
+      // keeps move controls attached at the bottom of the same keyboard.
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 Preview លំដាប់ថ្មី៖\n${preview}`,
-      });
-      // Show full keyword keyboard so admin can visually confirm the new order
-      const kwKb = buildKeywordKeyboard(newList);
-      if (kwKb) {
-        await tgRequest(token, "sendMessage", {
-          chat_id: chatId,
-          text: "⌨️ Keyboard ពាក្យបញ្ជា (លំដាប់ថ្មី)៖",
-          reply_markup: kwKb,
-        });
-      }
-      // Restore the position action keyboard for further moves
-      await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "បន្តផ្លាស់ទី ឬ ចុច ❌ បោះបង់៖",
-        reply_markup: POSITION_KEYBOARD,
+        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 លំដាប់ថ្មី៖\n${preview}\n\nបន្តផ្លាស់ទី ឬ ចុច ❌ បោះបង់៖`,
+        reply_markup: buildPositionKeyboard(newList),
       });
       return;
     }

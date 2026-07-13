@@ -80,12 +80,15 @@ function hapticNotify(type: "success" | "warning" | "error") {
 }
 
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Telegram-Init-Data": getInitData(),
+  };
+  const adminToken = typeof window !== "undefined" ? window.localStorage.getItem("admin_token") ?? "" : "";
+  if (adminToken) headers["X-Admin-Token"] = adminToken;
   const res = await fetch("/api/public/miniapp/api", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Telegram-Init-Data": getInitData(),
-    },
+    headers,
     body: JSON.stringify({ action, ...payload }),
   });
   if (!res.ok) {
@@ -142,14 +145,43 @@ function MiniApp() {
   }
 
   if (authErr) {
+    const isBrowser = typeof window !== "undefined" && !((window as any).Telegram?.WebApp?.initData);
     return (
       <div className="tg-app min-h-screen p-4">
-        <div className="tg-card p-5 max-w-md mx-auto mt-10">
-          <h2 className="text-lg font-bold mb-2">មិនមានសិទ្ធិចូល</h2>
-          <p className="tg-hint text-sm mb-3">
-            Mini App នេះត្រូវបើកពី Telegram ដោយគណនី Admin តែប៉ុណ្ណោះ។
-          </p>
-          <pre className="text-xs bg-black/30 p-2 rounded overflow-auto">{authErr}</pre>
+        <div className="tg-card p-5 max-w-md mx-auto mt-10 space-y-3">
+          <h2 className="text-lg font-bold">🔐 ចូល Admin</h2>
+          {isBrowser ? (
+            <>
+              <p className="tg-hint text-sm">
+                បើកពី Telegram (គណនី Admin) ដោយ​ស្វ័យប្រវត្តិ ឬ​បញ្ចូល Admin Token ដើម្បីចូលពី browser។
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const t = (e.currentTarget.elements.namedItem("token") as HTMLInputElement).value.trim();
+                  if (!t) return;
+                  window.localStorage.setItem("admin_token", t);
+                  setAuthErr(null);
+                  qc.invalidateQueries();
+                  meQ.refetch();
+                }}
+                className="space-y-2"
+              >
+                <Input name="token" type="password" placeholder="Admin Access Token" autoFocus />
+                <Button type="submit" className="w-full">ចូល</Button>
+              </form>
+              <p className="tg-hint text-xs">
+                Token រកក្នុង Lovable Secrets → <code>ADMIN_ACCESS_TOKEN</code>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="tg-hint text-sm">
+                Mini App នេះត្រូវបើកពី Telegram ដោយគណនី Admin តែប៉ុណ្ណោះ។
+              </p>
+              <pre className="text-xs bg-black/30 p-2 rounded overflow-auto">{authErr}</pre>
+            </>
+          )}
         </div>
       </div>
     );

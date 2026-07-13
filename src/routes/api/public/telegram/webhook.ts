@@ -98,8 +98,13 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // ---------------------------------------------------------------------------
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
+const MINIAPP_URL =
+  process.env.TELEGRAM_MINIAPP_URL ||
+  "https://project--b2c164c8-5957-4177-a231-1b8599b547e9.lovable.app/miniapp";
+
 export const MAIN_KEYBOARD = {
   keyboard: [
+    [{ text: "🧩 បើក Mini App", web_app: { url: MINIAPP_URL } }],
     ["បន្ថែមពាក្យថ្មី"],
     ["បញ្ជីពាក្យ កែប្រែ&លុប"],
     ["⏱ កំណត់ Timer លុបសារ"],

@@ -757,7 +757,7 @@ const tgStyles = `
   --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
   background: var(--tg-bg);
   color: var(--tg-text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: "Kantumruy Pro", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
 }
 .tg-card {
   background: var(--tg-section);

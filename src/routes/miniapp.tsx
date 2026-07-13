@@ -163,7 +163,8 @@ function MiniApp() {
   useEffect(() => {
     let cancelled = false;
     async function boot() {
-      await waitForTelegramInitData();
+      captureUrlToken();
+      await ensureTelegramScriptLoaded();
       const tg = (window as any).Telegram?.WebApp;
       if (tg) {
         tg.ready();
@@ -174,9 +175,7 @@ function MiniApp() {
       if (!cancelled) setReady(true);
     }
     boot();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const meQ = useQuery({

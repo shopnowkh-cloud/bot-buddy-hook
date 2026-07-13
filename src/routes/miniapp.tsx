@@ -64,93 +64,46 @@ type PendingRow = {
 };
 
 const TELEGRAM_SCRIPT_SRC = "https://telegram.org/js/telegram-web-app.js";
-const INIT_DATA_STORAGE_KEY = "telegram_init_data";
+const ADMIN_TOKEN_KEY = "admin_token";
 
-function normalizeInitData(raw: string | null | undefined): string {
-  if (!raw) return "";
-  const value = raw.trim();
-  if (!value) return "";
-  if (value.includes("hash=")) return value;
-  try {
-    const decoded = decodeURIComponent(value);
-    return decoded.includes("hash=") ? decoded : value;
-  } catch {
-    return value;
-  }
-}
-
-function rememberInitData(initData: string): string {
-  if (!initData || typeof window === "undefined") return initData;
-  try {
-    window.sessionStorage.setItem(INIT_DATA_STORAGE_KEY, initData);
-  } catch {}
-  return initData;
-}
-
-function getStoredInitData(): string {
+// Capture ?t=<token> from the URL (embedded by the bot for the admin's
+// private-chat Mini App button) and persist it as the admin token. This
+// runs once on module load so it's ready before any query fires.
+function captureUrlToken(): string {
   if (typeof window === "undefined") return "";
   try {
-    return window.sessionStorage.getItem(INIT_DATA_STORAGE_KEY) ?? "";
+    const url = new URL(window.location.href);
+    const t = url.searchParams.get("t") || url.searchParams.get("token");
+    if (t) {
+      window.localStorage.setItem(ADMIN_TOKEN_KEY, t);
+      // Clean the URL so the token doesn't linger in history/screenshots.
+      url.searchParams.delete("t");
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.pathname + (url.search ? url.search : "") + url.hash);
+      return t;
+    }
+    return window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
   } catch {
     return "";
   }
 }
 
-function extractInitDataFromParams(source: string): string {
-  if (!source) return "";
+function getAdminToken(): string {
+  if (typeof window === "undefined") return "";
   try {
-    const params = new URLSearchParams(source);
-    return normalizeInitData(params.get("tgWebAppData"));
+    return window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
   } catch {
     return "";
   }
-}
-
-function getInitDataFromLocation(): string {
-  if (typeof window === "undefined") return "";
-  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
-  const search = window.location.search.startsWith("?") ? window.location.search.slice(1) : window.location.search;
-  const fromParams = extractInitDataFromParams(hash) || extractInitDataFromParams(search);
-  if (fromParams) return rememberInitData(fromParams);
-
-  const fromHref = window.location.href.match(/[?#&]tgWebAppData=([^&#]+)/)?.[1];
-  const normalized = normalizeInitData(fromHref);
-  return normalized ? rememberInitData(normalized) : "";
-}
-
-function getInitData(): string {
-  if (typeof window === "undefined") return "";
-  const tg = (window as any).Telegram?.WebApp;
-  const initData = normalizeInitData(tg?.initData) || getInitDataFromLocation() || getStoredInitData();
-  return initData ? rememberInitData(initData) : "";
-}
-
-function hasAdminToken(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(window.localStorage.getItem("admin_token"));
-}
-
-function hasAuthSource(): boolean {
-  return Boolean(getInitData() || hasAdminToken());
 }
 
 async function ensureTelegramScriptLoaded(): Promise<void> {
   if (typeof window === "undefined") return;
   if ((window as any).Telegram?.WebApp) return;
-
   await new Promise<void>((resolve) => {
     let settled = false;
-    const finish = () => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-    const timer = window.setTimeout(finish, 1500);
-    const done = () => {
-      window.clearTimeout(timer);
-      finish();
-    };
+    const finish = () => { if (!settled) { settled = true; resolve(); } };
+    const timer = window.setTimeout(finish, 1200);
     let script = document.querySelector<HTMLScriptElement>(`script[src="${TELEGRAM_SCRIPT_SRC}"]`);
     if (!script) {
       script = document.createElement("script");
@@ -158,47 +111,30 @@ async function ensureTelegramScriptLoaded(): Promise<void> {
       script.async = true;
       document.head.appendChild(script);
     }
+    const done = () => { window.clearTimeout(timer); finish(); };
     script.addEventListener("load", done, { once: true });
     script.addEventListener("error", done, { once: true });
   });
 }
 
-async function waitForTelegramInitData(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
-  if (hasAuthSource()) return true;
-  await ensureTelegramScriptLoaded();
-  if (hasAuthSource()) return true;
-  for (let i = 0; i < 50; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    if (hasAuthSource()) return true;
-  }
-  return false;
-}
 function hapticImpact(style: "light" | "medium" | "heavy" = "light") {
-  try {
-    (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred(style);
-  } catch {}
+  try { (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred(style); } catch {}
 }
 function hapticNotify(type: "success" | "warning" | "error") {
-  try {
-    (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type);
-  } catch {}
+  try { (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type); } catch {}
 }
 
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  const initData = getInitData();
-  const adminToken = typeof window !== "undefined" ? window.localStorage.getItem("admin_token") ?? "" : "";
-  if (!initData && !adminToken) {
-    throw new Error("Telegram initData មិនទាន់មកដល់ទេ។ សូមបិទ Mini App ហើយចុច 🧩 បើក Mini App ពី Telegram ម្តងទៀត។");
+  const adminToken = getAdminToken();
+  if (!adminToken) {
+    throw new Error("មិនមានសិទ្ធិចូល។ សូមបើក Mini App ពីប៊ូតុង 🧩 ក្នុង Telegram (private chat ជាមួយ bot) ឬបញ្ចូល Admin Token។");
   }
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (initData) headers["X-Telegram-Init-Data"] = initData;
-  if (adminToken) headers["X-Admin-Token"] = adminToken;
   const res = await fetch("/api/public/miniapp/api", {
     method: "POST",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    },
     body: JSON.stringify({ action, ...payload }),
   });
   if (!res.ok) {

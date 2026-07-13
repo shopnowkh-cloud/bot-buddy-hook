@@ -982,10 +982,25 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 Preview លំដាប់ថ្មី៖\n${preview}`,
+      });
+      // Show full keyword keyboard so admin can visually confirm the new order
+      const kwKb = buildKeywordKeyboard(newList);
+      if (kwKb) {
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: "⌨️ Keyboard ពាក្យបញ្ជា (លំដាប់ថ្មី)៖",
+          reply_markup: kwKb,
+        });
+      }
+      // Restore the position action keyboard for further moves
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "បន្តផ្លាស់ទី ឬ ចុច ❌ បោះបង់៖",
         reply_markup: POSITION_KEYBOARD,
       });
       return;
     }
+
 
 
 

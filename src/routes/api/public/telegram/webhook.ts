@@ -135,6 +135,24 @@ const POSITION_KEYBOARD = {
   resize_keyboard: true,
 };
 
+// Combined keyboard: keyword rows (current order) + position controls at bottom.
+// Sending this in ONE message makes Telegram refresh the reply keyboard
+// immediately so admin sees the new order right away while still being able
+// to press ⬆️/⬇️/⏫/⏬ to continue moving.
+function buildPositionKeyboard(keys: string[]) {
+  const kwRows: string[][] = [];
+  for (let i = 0; i < keys.length; i += 2) kwRows.push(keys.slice(i, i + 2));
+  return {
+    keyboard: [
+      ...kwRows,
+      ["⬆️ ឡើងលើ", "⬇️ ចុះក្រោម"],
+      ["⏫ ទៅដើម", "⏬ ទៅចុង"],
+      ["❌ បោះបង់"],
+    ],
+    resize_keyboard: true,
+  };
+}
+
 const TIMER_KEYBOARD = {
   keyboard: [
     ["បិទ (មិនលុប)"],

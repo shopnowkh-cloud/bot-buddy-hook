@@ -46,6 +46,10 @@ const RequestSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("delete_reply"), keyword: z.string().min(1).max(255) }),
   z.object({ action: z.literal("clear_pending") }),
+  z.object({
+    action: z.literal("reorder_replies"),
+    keywords: z.array(z.string().min(1).max(255)).min(1).max(500),
+  }),
 ]);
 
 function jerr(status: number, msg: string) {

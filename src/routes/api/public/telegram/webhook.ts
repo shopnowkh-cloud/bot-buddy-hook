@@ -971,12 +971,24 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       else if (text === "⬇️ ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
       else if (text === "⏫ ទៅដើម") newIdx = 0;
       else if (text === "⏬ ទៅចុង") newIdx = list.length - 1;
+      else if (numericJump !== null) {
+        if (numericJump < 1 || numericJump > list.length) {
+          const curList = normalized.map((r) => String(r.keyword).toLowerCase());
+          await tgRequest(token, "sendMessage", {
+            chat_id: chatId,
+            text: `⚠️ លេខទីតាំងត្រូវនៅចន្លោះ 1 ដល់ ${list.length}។`,
+            reply_markup: buildPositionKeyboard(curList),
+          });
+          return;
+        }
+        newIdx = numericJump - 1;
+      }
 
       if (newIdx === idx && list.length > 1) {
         const curList = normalized.map((r) => String(r.keyword).toLowerCase());
         await tgRequest(token, "sendMessage", {
           chat_id: chatId,
-          text: `⚠️ ពាក្យ [${kw}] នៅ${text === "⬆️ ឡើងលើ" || text === "⏫ ទៅដើម" ? "ដើម" : "ចុង"}បញ្ជីរួចហើយ។`,
+          text: `⚠️ ពាក្យ [${kw}] នៅទីតាំង ${idx + 1} រួចហើយ។`,
           reply_markup: buildPositionKeyboard(curList),
         });
         return;

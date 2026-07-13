@@ -20,6 +20,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Hash,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUp,
+  ChevronsDown,
+  ArrowUpDown,
+  Check,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -47,6 +53,7 @@ type Reply = {
   content: ContentItem[];
   delete_after_seconds: number | null;
   updated_at: string;
+  position?: number;
 };
 type PendingRow = {
   id: number;
@@ -294,6 +301,7 @@ function KeywordsPanel() {
   });
   const [editing, setEditing] = useState<Reply | null>(null);
   const [creating, setCreating] = useState(false);
+  const [reordering, setReordering] = useState(false);
 
   if (editing || creating) {
     return (
@@ -314,9 +322,27 @@ function KeywordsPanel() {
   }
 
   const replies = q.data?.replies ?? [];
+
+  if (reordering) {
+    return (
+      <ReorderPanel
+        replies={replies}
+        onClose={() => { setReordering(false); qc.invalidateQueries({ queryKey: ["replies"] }); }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3 pt-2">
       <BigAction icon={<Plus />} label="បន្ថែមពាក្យថ្មី" onClick={() => setCreating(true)} />
+      {replies.length > 1 && (
+        <button
+          onClick={() => { hapticImpact("medium"); setReordering(true); }}
+          className="w-full h-12 rounded-2xl bg-[var(--tg-section-2)] font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98]"
+        >
+          <ArrowUpDown className="h-5 w-5" /> ↕️ តម្រៀបទីតាំង
+        </button>
+      )}
       {q.isLoading && <p className="tg-hint text-sm text-center py-6">កំពុងផ្ទុក...</p>}
       {!q.isLoading && replies.length === 0 && (
         <div className="tg-card p-8 text-center">
@@ -325,10 +351,10 @@ function KeywordsPanel() {
         </div>
       )}
       <div className="space-y-2">
-        {replies.map((r) => (
+        {replies.map((r, i) => (
           <div key={r.keyword} className="tg-card p-3 flex items-center gap-3">
-            <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
-              <Hash className="h-5 w-5" />
+            <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold text-sm">
+              {i + 1}
             </div>
             <button onClick={() => setEditing(r)} className="min-w-0 flex-1 text-left active:opacity-70">
               <p className="font-semibold truncate">{r.keyword}</p>
@@ -350,6 +376,122 @@ function KeywordsPanel() {
     </div>
   );
 }
+
+function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [order, setOrder] = useState<string[]>(replies.map((r) => r.keyword));
+  const [jumpFor, setJumpFor] = useState<string | null>(null);
+  const [jumpVal, setJumpVal] = useState("");
+
+  const save = useMutation({
+    mutationFn: (keywords: string[]) => callApi("reorder_replies", { keywords }),
+    onSuccess: () => { hapticNotify("success"); qc.invalidateQueries({ queryKey: ["replies"] }); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+  });
+
+  const commit = (next: string[]) => {
+    setOrder(next);
+    save.mutate(next);
+  };
+
+  const move = (idx: number, target: number) => {
+    if (target < 0 || target >= order.length || target === idx) return;
+    hapticImpact("light");
+    const next = order.slice();
+    const [k] = next.splice(idx, 1);
+    next.splice(target, 0, k);
+    commit(next);
+  };
+
+  const jump = (idx: number) => {
+    const n = parseInt(jumpVal, 10);
+    if (!Number.isFinite(n) || n < 1 || n > order.length) {
+      toast.error(`លេខត្រូវនៅចន្លោះ 1 ដល់ ${order.length}`);
+      return;
+    }
+    move(idx, n - 1);
+    setJumpFor(null);
+    setJumpVal("");
+  };
+
+  return (
+    <div className="pt-2 space-y-3">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1 tg-hint text-sm px-2 py-2 active:opacity-70"
+        >
+          <ChevronLeft className="h-4 w-4" /> រួចរាល់
+        </button>
+        <p className="tg-hint text-xs flex-1 text-right">
+          {save.isPending ? "កំពុងរក្សាទុក..." : "រក្សាទុកដោយស្វ័យប្រវត្តិ"}
+        </p>
+      </div>
+
+      <div className="tg-card p-3">
+        <p className="tg-hint text-xs mb-1">↕️ តម្រៀបទីតាំងពាក្យបញ្ជា</p>
+        <p className="text-xs">ចុច 🔼 🔽 ដើម្បីប្តូរ ឬចុចលេខ # ដើម្បីលោតទៅទីតាំងណាមួយ</p>
+      </div>
+
+      <div className="space-y-2">
+        {order.map((kw, i) => (
+          <div key={kw} className="tg-card p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                onClick={() => { hapticImpact(); setJumpFor(jumpFor === kw ? null : kw); setJumpVal(String(i + 1)); }}
+                className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold text-sm active:scale-95"
+                aria-label="Jump"
+              >
+                #{i + 1}
+              </button>
+              <p className="font-semibold truncate flex-1">{kw}</p>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <ReorderBtn icon={<ChevronsUp className="h-5 w-5" />} label="ដើម" disabled={i === 0} onClick={() => move(i, 0)} />
+              <ReorderBtn icon={<ArrowUp className="h-5 w-5" />} label="ឡើង" disabled={i === 0} onClick={() => move(i, i - 1)} />
+              <ReorderBtn icon={<ArrowDown className="h-5 w-5" />} label="ចុះ" disabled={i === order.length - 1} onClick={() => move(i, i + 1)} />
+              <ReorderBtn icon={<ChevronsDown className="h-5 w-5" />} label="ចុង" disabled={i === order.length - 1} onClick={() => move(i, order.length - 1)} />
+            </div>
+            {jumpFor === kw && (
+              <div className="mt-3 flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={order.length}
+                  value={jumpVal}
+                  onChange={(e) => setJumpVal(e.target.value)}
+                  placeholder={`1 - ${order.length}`}
+                  className="tg-input h-12 text-base"
+                />
+                <button
+                  onClick={() => jump(i)}
+                  className="h-12 px-4 rounded-xl bg-[var(--tg-btn)] text-white font-semibold flex items-center gap-1 active:scale-95"
+                >
+                  <Check className="h-4 w-4" /> លោត
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReorderBtn({ icon, label, disabled, onClick }: { icon: React.ReactNode; label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="h-12 rounded-xl bg-[var(--tg-section-2)] flex flex-col items-center justify-center gap-0.5 active:scale-95 disabled:opacity-30 disabled:active:scale-100"
+    >
+      {icon}
+      <span className="text-[10px] font-medium">{label}</span>
+    </button>
+  );
+}
+
+
 
 function DeleteBtn({ keyword }: { keyword: string }) {
   const qc = useQueryClient();

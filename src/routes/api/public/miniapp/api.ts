@@ -46,6 +46,10 @@ const RequestSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("delete_reply"), keyword: z.string().min(1).max(255) }),
   z.object({ action: z.literal("clear_pending") }),
+  z.object({
+    action: z.literal("reorder_replies"),
+    keywords: z.array(z.string().min(1).max(255)).min(1).max(500),
+  }),
 ]);
 
 function jerr(status: number, msg: string) {
@@ -101,8 +105,9 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             case "list_replies": {
               const { data, error } = await s
                 .from("replies")
-                .select("keyword, content, delete_after_seconds, updated_at")
-                .order("updated_at", { ascending: false });
+                .select("keyword, content, delete_after_seconds, updated_at, position")
+                .order("position", { ascending: true })
+                .order("created_at", { ascending: true });
               if (error) return jerr(500, error.message);
               return Response.json({ replies: data ?? [] });
             }
@@ -161,6 +166,16 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             case "clear_pending": {
               const { error } = await s.from("pending_deletions").delete().neq("id", -1);
               if (error) return jerr(500, error.message);
+              return Response.json({ ok: true });
+            }
+            case "reorder_replies": {
+              const now = new Date().toISOString();
+              const updates = req.keywords.map((keyword, i) =>
+                s.from("replies").update({ position: (i + 1) * 10, updated_at: now }).eq("keyword", keyword),
+              );
+              const results = await Promise.all(updates);
+              const firstErr = results.find((r) => r.error);
+              if (firstErr?.error) return jerr(500, firstErr.error.message);
               return Response.json({ ok: true });
             }
           }

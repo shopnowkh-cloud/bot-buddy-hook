@@ -26,6 +26,9 @@ import {
   ChevronsDown,
   ArrowUpDown,
   Check,
+  Shield,
+  KeyRound,
+  UserPlus,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";

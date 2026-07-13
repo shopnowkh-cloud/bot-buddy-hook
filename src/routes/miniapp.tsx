@@ -163,8 +163,8 @@ function MiniApp() {
       <style>{tgStyles}</style>
 
       {/* Header */}
-      <header className="px-4 pt-4 pb-3 flex items-center gap-3">
-        <div className="h-11 w-11 shrink-0 rounded-full bg-[var(--tg-btn)] grid place-items-center text-white font-bold text-lg">
+      <header className="tg-anim-header px-4 pt-4 pb-3 flex items-center gap-3">
+        <div className="h-11 w-11 shrink-0 rounded-full bg-[var(--tg-btn)] grid place-items-center text-white font-bold text-lg shadow-lg shadow-[var(--tg-btn)]/30">
           {meQ.data?.user?.first_name?.[0]?.toUpperCase() ?? "A"}
         </div>
         <div className="min-w-0 flex-1">
@@ -179,7 +179,7 @@ function MiniApp() {
         <button
           aria-label="Refresh"
           onClick={() => { hapticImpact("light"); qc.invalidateQueries(); }}
-          className="h-10 w-10 rounded-full grid place-items-center bg-[var(--tg-section)] active:scale-95 transition"
+          className="tg-press tg-spin-hover h-10 w-10 rounded-full grid place-items-center bg-[var(--tg-section)]"
         >
           <RefreshCw className="h-5 w-5" />
         </button>
@@ -187,15 +187,17 @@ function MiniApp() {
 
       {/* Content */}
       <main className="flex-1 px-3 pb-28 overflow-y-auto">
-        {tab === "stats" && <StatsPanel onGo={setTab} />}
-        {tab === "keywords" && <KeywordsPanel />}
-        {tab === "timer" && <TimerPanel />}
-        {tab === "pending" && <PendingPanel />}
-        {tab === "admins" && <AdminsPanel />}
+        <div key={tab} className="tg-anim-page tg-stagger">
+          {tab === "stats" && <StatsPanel onGo={setTab} />}
+          {tab === "keywords" && <KeywordsPanel />}
+          {tab === "timer" && <TimerPanel />}
+          {tab === "pending" && <PendingPanel />}
+          {tab === "admins" && <AdminsPanel />}
+        </div>
       </main>
 
       {/* Bottom tab bar — large clear buttons */}
-      <nav className="fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe">
+      <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
         <div className="grid grid-cols-5 gap-1 px-2 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />

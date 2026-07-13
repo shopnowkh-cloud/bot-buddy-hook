@@ -4,8 +4,6 @@ import { z } from "zod";
 import { verifyInitData } from "@/lib/telegram-initdata.server";
 import type { Database } from "@/integrations/supabase/types";
 
-const ADMIN_ID = 5002402843;
-
 let _supabase: ReturnType<typeof createClient<Database>> | null = null;
 function sb() {
   if (!_supabase) {

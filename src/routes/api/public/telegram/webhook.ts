@@ -1014,7 +1014,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       // keeps move controls attached at the bottom of the same keyboard.
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 លំដាប់ថ្មី៖\n${preview}\n\nបន្តផ្លាស់ទី ឬ ចុច ❌ បោះបង់៖`,
+        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 លំដាប់ថ្មី៖\n${preview}\n\n👉 វាយលេខ 1-${updates.length} ដើម្បីលោត ឬ ចុច ❌ បោះបង់៖`,
         reply_markup: buildPositionKeyboard(newList),
       });
       return;

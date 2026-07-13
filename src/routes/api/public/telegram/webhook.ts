@@ -192,27 +192,19 @@ type ReplyContent =
   | { type: "sticker"; content: string };
 
 function getReplyContent(msg: any): ReplyContent | null {
-  const isForwarded = !!(msg.forward_from || msg.forward_origin || msg.forward_from_chat);
-  if (msg.text) return { type: "text", content: msg.text };
-  if (msg.photo?.length) {
-    const bestPhoto = msg.photo[msg.photo.length - 1];
-    return { type: "photo", content: bestPhoto.file_id, caption: msg.caption };
-  }
-  if (msg.video?.file_id) return { type: "video", content: msg.video.file_id, caption: msg.caption };
-  if (msg.voice?.file_id) return { type: "voice", content: msg.voice.file_id };
-  if (msg.audio?.file_id) return { type: "audio", content: msg.audio.file_id, caption: msg.caption };
-  if (msg.document?.file_id) return { type: "document", content: msg.document.file_id, caption: msg.caption };
-  if (msg.sticker?.file_id) return { type: "sticker", content: msg.sticker.file_id };
-
-  if (isForwarded) {
-    return {
-      type: "copy",
-      from_chat_id: msg.chat.id,
-      message_id: msg.message_id,
-      forward: isForwarded,
-    };
-  }
-  return null;
+  // Always use copy/forward so we preserve the exact original format:
+  // - formatting entities (bold, italic, links, code, mentions)
+  // - media + caption + caption entities
+  // - stickers, voice, video notes, documents, polls, etc.
+  // - "Forwarded from …" header when the admin forwarded the source message
+  if (!msg?.chat?.id || !msg?.message_id) return null;
+  const isForwarded = !!(msg.forward_from || msg.forward_origin || msg.forward_from_chat || msg.forward_sender_name);
+  return {
+    type: "copy",
+    from_chat_id: msg.chat.id,
+    message_id: msg.message_id,
+    forward: isForwarded,
+  };
 }
 
 // ---------------------------------------------------------------------------

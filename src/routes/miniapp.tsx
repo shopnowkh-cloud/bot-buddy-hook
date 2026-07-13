@@ -20,6 +20,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Hash,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUp,
+  ChevronsDown,
+  ArrowUpDown,
+  Check,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";

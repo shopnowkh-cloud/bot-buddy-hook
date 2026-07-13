@@ -856,3 +856,177 @@ const tgStyles = `
 .tg-input::placeholder { color: var(--tg-hint); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 8px); }
 `;
+
+type AdminIdRow = { id: number; from_env: boolean };
+type AccessTokenRow = { preview: string; token: string; from_env: boolean };
+
+function AdminsPanel() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["admins"],
+    queryFn: () => callApi<{ admin_ids: AdminIdRow[]; access_tokens: AccessTokenRow[] }>("list_admins"),
+  });
+
+  const [newId, setNewId] = useState("");
+  const [newToken, setNewToken] = useState("");
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admins"] });
+
+  const addId = useMutation({
+    mutationFn: (id: number) => callApi("add_admin_id", { admin_id: id }),
+    onSuccess: () => { hapticNotify("success"); toast.success("បន្ថែម Admin ID រួចរាល់"); setNewId(""); invalidate(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+  });
+  const removeId = useMutation({
+    mutationFn: (id: number) => callApi("remove_admin_id", { admin_id: id }),
+    onSuccess: () => { hapticNotify("success"); toast.success("លុប Admin រួចរាល់"); invalidate(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+  });
+  const addTok = useMutation({
+    mutationFn: (t: string) => callApi("add_access_token", { token: t }),
+    onSuccess: () => { hapticNotify("success"); toast.success("បន្ថែម Token រួចរាល់"); setNewToken(""); invalidate(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+  });
+  const removeTok = useMutation({
+    mutationFn: (t: string) => callApi("remove_access_token", { token: t }),
+    onSuccess: () => { hapticNotify("success"); toast.success("លុប Token រួចរាល់"); invalidate(); },
+    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+  });
+
+  function genToken() {
+    const arr = new Uint8Array(24);
+    (typeof crypto !== "undefined" ? crypto : (window as any).crypto).getRandomValues(arr);
+    const b = Array.from(arr).map((x) => x.toString(16).padStart(2, "0")).join("");
+    setNewToken(b);
+  }
+
+  return (
+    <div className="space-y-4 pt-2">
+      <SectionTitle>👥 Admin IDs</SectionTitle>
+      <div className="tg-card p-4 space-y-3">
+        <p className="tg-hint text-xs">
+          Telegram user ID ដែលអាចប្រើប្រាស់ bot ក្នុង private chat។ ID ពី secret <code>ADMIN_CHAT_ID</code> ត្រូវបានចាក់សោ (មិនអាចលុប)។
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const n = Number(newId.trim());
+            if (!Number.isFinite(n) || n <= 0) { toast.error("ID មិនត្រឹមត្រូវ"); return; }
+            addId.mutate(n);
+          }}
+          className="flex gap-2"
+        >
+          <Input
+            className="tg-input flex-1"
+            placeholder="Telegram User ID (ឧ. 123456789)"
+            inputMode="numeric"
+            value={newId}
+            onChange={(e) => setNewId(e.target.value)}
+          />
+          <Button type="submit" disabled={addId.isPending} className="shrink-0">
+            <UserPlus className="h-4 w-4 mr-1" /> បន្ថែម
+          </Button>
+        </form>
+
+        <div className="space-y-2">
+          {q.isLoading && <p className="tg-hint text-sm">កំពុងផ្ទុក...</p>}
+          {q.data?.admin_ids.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[var(--tg-section-2)]">
+              <div className="min-w-0">
+                <div className="font-mono text-sm truncate">{r.id}</div>
+                {r.from_env && <Badge variant="secondary" className="mt-1">Secret (locked)</Badge>}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={r.from_env || removeId.isPending}
+                onClick={() => {
+                  if (confirm(`លុប Admin ${r.id}?`)) removeId.mutate(r.id);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          {q.data && q.data.admin_ids.length === 0 && (
+            <p className="tg-hint text-sm">មិនទាន់មាន Admin</p>
+          )}
+        </div>
+      </div>
+
+      <SectionTitle>🔑 Access Tokens</SectionTitle>
+      <div className="tg-card p-4 space-y-3">
+        <p className="tg-hint text-xs">
+          Token ប្រើសម្រាប់បើក Mini App ពី browser ឬបង្កប់ក្នុង URL។ Token ពី secret <code>ADMIN_ACCESS_TOKEN</code> ត្រូវបានចាក់សោ។
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = newToken.trim();
+            if (t.length < 8) { toast.error("Token យ៉ាងតិច 8 តួ"); return; }
+            addTok.mutate(t);
+          }}
+          className="space-y-2"
+        >
+          <div className="flex gap-2">
+            <Input
+              className="tg-input flex-1"
+              placeholder="Access token (យ៉ាងតិច 8 តួ)"
+              value={newToken}
+              onChange={(e) => setNewToken(e.target.value)}
+            />
+            <Button type="button" variant="outline" onClick={genToken} className="shrink-0">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+          <Button type="submit" disabled={addTok.isPending} className="w-full">
+            <KeyRound className="h-4 w-4 mr-1" /> បន្ថែម Token
+          </Button>
+        </form>
+
+        <div className="space-y-2">
+          {q.data?.access_tokens.map((r) => (
+            <div key={r.token} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[var(--tg-section-2)]">
+              <div className="min-w-0">
+                <div className="font-mono text-sm truncate">{r.preview}</div>
+                <div className="flex gap-1 mt-1">
+                  {r.from_env && <Badge variant="secondary">Secret (locked)</Badge>}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(r.token);
+                      toast.success("បាន copy Token");
+                    } catch {
+                      toast.error("Copy បរាជ័យ");
+                    }
+                  }}
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={r.from_env || removeTok.isPending}
+                  onClick={() => {
+                    if (confirm(`លុប Token ${r.preview}?`)) removeTok.mutate(r.token);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          {q.data && q.data.access_tokens.length === 0 && (
+            <p className="tg-hint text-sm">មិនទាន់មាន Token</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

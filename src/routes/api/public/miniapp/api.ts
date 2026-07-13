@@ -4,8 +4,6 @@ import { z } from "zod";
 import { verifyInitData } from "@/lib/telegram-initdata.server";
 import type { Database } from "@/integrations/supabase/types";
 
-const ADMIN_ID = 5002402843;
-
 let _supabase: ReturnType<typeof createClient<Database>> | null = null;
 function sb() {
   if (!_supabase) {
@@ -50,6 +48,11 @@ const RequestSchema = z.discriminatedUnion("action", [
     action: z.literal("reorder_replies"),
     keywords: z.array(z.string().min(1).max(255)).min(1).max(500),
   }),
+  z.object({ action: z.literal("list_admins") }),
+  z.object({ action: z.literal("add_admin_id"), admin_id: z.number().int().positive() }),
+  z.object({ action: z.literal("remove_admin_id"), admin_id: z.number().int().positive() }),
+  z.object({ action: z.literal("add_access_token"), token: z.string().min(8).max(256) }),
+  z.object({ action: z.literal("remove_access_token"), token: z.string().min(1).max(256) }),
 ]);
 
 function jerr(status: number, msg: string) {
@@ -68,21 +71,19 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
         const token = process.env.TELEGRAM_BOT_TOKEN;
         if (!token) return jerr(500, "bot token missing");
 
+        const { isValidAccessToken, isAdminUserId } = await import("@/lib/admin-config.server");
+
         let authUser: { id: number; first_name?: string; username?: string } | null = null;
 
-        // Path A: admin access token (browser)
-        const expectedAdminToken = process.env.ADMIN_ACCESS_TOKEN ?? "";
-        if (adminToken && expectedAdminToken && adminToken === expectedAdminToken) {
-          authUser = { id: ADMIN_ID, first_name: "Admin", username: "admin" };
+        // Path A: admin access token (env fallback OR any token from admin_settings)
+        if (adminToken && (await isValidAccessToken(adminToken))) {
+          authUser = { id: 0, first_name: "Admin", username: "admin" };
         } else {
           // Path B: Telegram initData
-          const v = verifyInitData(initData, token);
-          if (!v.ok || !v.user) return jerr(401, `unauthorized: ${v.reason ?? "missing initData"}`);
-          const adminEnv = process.env.ADMIN_CHAT_ID ? Number(process.env.ADMIN_CHAT_ID) : null;
-          if (v.user.id !== ADMIN_ID && (adminEnv === null || v.user.id !== adminEnv)) {
-            return jerr(403, "not admin");
-          }
-          authUser = v.user;
+          const vv = verifyInitData(initData, token);
+          if (!vv.ok || !vv.user) return jerr(401, `unauthorized: ${vv.reason ?? "missing initData"}`);
+          if (!(await isAdminUserId(vv.user.id))) return jerr(403, "not admin");
+          authUser = vv.user;
         }
         const v = { ok: true as const, user: authUser };
 
@@ -187,6 +188,52 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
               const results = await Promise.all(updates);
               const firstErr = results.find((r) => r.error);
               if (firstErr?.error) return jerr(500, firstErr.error.message);
+              return Response.json({ ok: true });
+            }
+            case "list_admins": {
+              const { getAdminConfig } = await import("@/lib/admin-config.server");
+              const cfg = await getAdminConfig(true);
+              const envIds = process.env.ADMIN_CHAT_ID ? [Number(process.env.ADMIN_CHAT_ID)] : [];
+              const envToken = process.env.ADMIN_ACCESS_TOKEN ?? "";
+              return Response.json({
+                admin_ids: cfg.adminIds.map((id) => ({
+                  id,
+                  from_env: envIds.includes(Number(id)),
+                })),
+                access_tokens: cfg.accessTokens.map((t) => ({
+                  // Never return full token — masked preview only.
+                  preview: t.length <= 8 ? "••••" : `${t.slice(0, 4)}…${t.slice(-4)}`,
+                  token: t,
+                  from_env: t === envToken,
+                })),
+              });
+            }
+            case "add_admin_id": {
+              const { addAdminId } = await import("@/lib/admin-config.server");
+              await addAdminId(req.admin_id);
+              return Response.json({ ok: true });
+            }
+            case "remove_admin_id": {
+              const envIds = process.env.ADMIN_CHAT_ID ? [Number(process.env.ADMIN_CHAT_ID)] : [];
+              if (envIds.includes(Number(req.admin_id))) {
+                return jerr(400, "cannot remove env-managed admin (edit ADMIN_CHAT_ID secret)");
+              }
+              const { removeAdminId } = await import("@/lib/admin-config.server");
+              await removeAdminId(req.admin_id);
+              return Response.json({ ok: true });
+            }
+            case "add_access_token": {
+              const { addAccessToken } = await import("@/lib/admin-config.server");
+              await addAccessToken(req.token);
+              return Response.json({ ok: true });
+            }
+            case "remove_access_token": {
+              const envToken = process.env.ADMIN_ACCESS_TOKEN ?? "";
+              if (envToken && req.token === envToken) {
+                return jerr(400, "cannot remove env-managed token (edit ADMIN_ACCESS_TOKEN secret)");
+              }
+              const { removeAccessToken } = await import("@/lib/admin-config.server");
+              await removeAccessToken(req.token);
               return Response.json({ ok: true });
             }
           }

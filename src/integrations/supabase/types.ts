@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_settings: {
+        Row: {
+          access_tokens: string[]
+          admin_ids: number[]
+          id: number
+          updated_at: string
+        }
+        Insert: {
+          access_tokens?: string[]
+          admin_ids?: number[]
+          id?: number
+          updated_at?: string
+        }
+        Update: {
+          access_tokens?: string[]
+          admin_ids?: number[]
+          id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       admin_state: {
         Row: {
           chat_id: number

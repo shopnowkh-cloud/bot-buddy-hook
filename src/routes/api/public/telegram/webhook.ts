@@ -564,8 +564,9 @@ export async function handleMessage(token: string, adminId: number, supabase: an
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
 
   if (isGroup) return handleUserMessage(token, supabase, msg);
-  // Private chat: only admin allowed
-  if (msg.from?.id !== adminId) return;
+  // Private chat: only admins (env + admin_settings table) allowed
+  const { isAdminUserId } = await import("@/lib/admin-config.server");
+  if (!(await isAdminUserId(msg.from?.id))) return;
 
   // -------- ADMIN --------
   const s = await loadState(supabase, chatId);

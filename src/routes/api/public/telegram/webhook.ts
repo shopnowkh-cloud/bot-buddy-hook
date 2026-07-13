@@ -937,19 +937,20 @@ export async function handleMessage(token: string, adminId: number, supabase: an
         .join("\n");
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\n📋 Preview លំដាប់៖\n${preview}\n\nសូមជ្រើសរើសទិសផ្លាស់ទី៖`,
+        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\n📋 Preview លំដាប់៖\n${preview}\n\n👉 ចុចប៊ូតុងផ្លាស់ទី ឬ វាយលេខ 1-${total} ដើម្បីលោតទៅទីតាំងណាមួយ៖`,
         reply_markup: buildPositionKeyboard(keys),
       });
       return;
     }
 
 
-    if (
+    const isDirection =
       text === "⬆️ ឡើងលើ" ||
       text === "⬇️ ចុះក្រោម" ||
       text === "⏫ ទៅដើម" ||
-      text === "⏬ ទៅចុង"
-    ) {
+      text === "⏬ ទៅចុង";
+    const numericJump = text && /^\d+$/.test(text.trim()) ? parseInt(text.trim(), 10) : null;
+    if (isDirection || numericJump !== null) {
       const { data: rows } = await supabase
         .from("replies")
         .select("keyword, position")
@@ -970,12 +971,24 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       else if (text === "⬇️ ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
       else if (text === "⏫ ទៅដើម") newIdx = 0;
       else if (text === "⏬ ទៅចុង") newIdx = list.length - 1;
+      else if (numericJump !== null) {
+        if (numericJump < 1 || numericJump > list.length) {
+          const curList = normalized.map((r) => String(r.keyword).toLowerCase());
+          await tgRequest(token, "sendMessage", {
+            chat_id: chatId,
+            text: `⚠️ លេខទីតាំងត្រូវនៅចន្លោះ 1 ដល់ ${list.length}។`,
+            reply_markup: buildPositionKeyboard(curList),
+          });
+          return;
+        }
+        newIdx = numericJump - 1;
+      }
 
       if (newIdx === idx && list.length > 1) {
         const curList = normalized.map((r) => String(r.keyword).toLowerCase());
         await tgRequest(token, "sendMessage", {
           chat_id: chatId,
-          text: `⚠️ ពាក្យ [${kw}] នៅ${text === "⬆️ ឡើងលើ" || text === "⏫ ទៅដើម" ? "ដើម" : "ចុង"}បញ្ជីរួចហើយ។`,
+          text: `⚠️ ពាក្យ [${kw}] នៅទីតាំង ${idx + 1} រួចហើយ។`,
           reply_markup: buildPositionKeyboard(curList),
         });
         return;
@@ -1001,7 +1014,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       // keeps move controls attached at the bottom of the same keyboard.
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 លំដាប់ថ្មី៖\n${preview}\n\nបន្តផ្លាស់ទី ឬ ចុច ❌ បោះបង់៖`,
+        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}\n\n📋 លំដាប់ថ្មី៖\n${preview}\n\n👉 វាយលេខ 1-${updates.length} ដើម្បីលោត ឬ ចុច ❌ បោះបង់៖`,
         reply_markup: buildPositionKeyboard(newList),
       });
       return;

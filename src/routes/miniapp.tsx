@@ -156,7 +156,6 @@ type Tab = "stats" | "keywords" | "timer" | "pending" | "admins";
 
 function MiniApp() {
   const [ready, setReady] = useState(false);
-  const [authErr, setAuthErr] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("stats");
   const qc = useQueryClient();
 
@@ -184,10 +183,6 @@ function MiniApp() {
     enabled: ready,
     retry: false,
   });
-
-  useEffect(() => {
-    if (meQ.error) setAuthErr((meQ.error as Error).message);
-  }, [meQ.error]);
 
   if (!ready) {
     return (

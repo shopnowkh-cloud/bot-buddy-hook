@@ -937,7 +937,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
         .join("\n");
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\n📋 Preview លំដាប់៖\n${preview}\n\nសូមជ្រើសរើសទិសផ្លាស់ទី៖`,
+        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\n📋 Preview លំដាប់៖\n${preview}\n\n👉 ចុចប៊ូតុងផ្លាស់ទី ឬ វាយលេខ 1-${total} ដើម្បីលោតទៅទីតាំងណាមួយ៖`,
         reply_markup: buildPositionKeyboard(keys),
       });
       return;

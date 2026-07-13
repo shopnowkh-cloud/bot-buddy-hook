@@ -126,7 +126,12 @@ const REPLY_COLLECT_KEYBOARD = {
 };
 
 const ACTION_KEYBOARD = {
-  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer"], ["❌ បោះបង់"]],
+  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer", "↕️ ទីតាំង"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
+const POSITION_KEYBOARD = {
+  keyboard: [["⬆️ ឡើងលើ", "⬇️ ចុះក្រោម"], ["⏫ ទៅដើម", "⏬ ទៅចុង"], ["❌ បោះបង់"]],
   resize_keyboard: true,
 };
 

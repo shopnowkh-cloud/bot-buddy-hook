@@ -129,14 +129,11 @@ function hapticNotify(type: "success" | "warning" | "error") {
 
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const adminToken = getAdminToken();
-  if (!adminToken) {
-    throw new Error("មិនមានសិទ្ធិចូល។ សូមបើក Mini App ពីប៊ូតុង 🧩 ក្នុង Telegram (private chat ជាមួយ bot) ឬបញ្ចូល Admin Token។");
-  }
   const res = await fetch("/api/public/miniapp/api", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Admin-Token": adminToken,
+      ...(adminToken ? { "X-Admin-Token": adminToken } : {}),
     },
     body: JSON.stringify({ action, ...payload }),
   });

@@ -64,16 +64,27 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
     handlers: {
       POST: async ({ request }) => {
         const initData = request.headers.get("X-Telegram-Init-Data") ?? "";
+        const adminToken = request.headers.get("X-Admin-Token") ?? "";
         const token = process.env.TELEGRAM_BOT_TOKEN;
         if (!token) return jerr(500, "bot token missing");
 
-        const v = verifyInitData(initData, token);
-        if (!v.ok || !v.user) return jerr(401, `unauthorized: ${v.reason ?? "unknown"}`);
+        let authUser: { id: number; first_name?: string; username?: string } | null = null;
 
-        const adminEnv = process.env.ADMIN_CHAT_ID ? Number(process.env.ADMIN_CHAT_ID) : null;
-        if (v.user.id !== ADMIN_ID && (adminEnv === null || v.user.id !== adminEnv)) {
-          return jerr(403, "not admin");
+        // Path A: admin access token (browser)
+        const expectedAdminToken = process.env.ADMIN_ACCESS_TOKEN ?? "";
+        if (adminToken && expectedAdminToken && adminToken === expectedAdminToken) {
+          authUser = { id: ADMIN_ID, first_name: "Admin", username: "admin" };
+        } else {
+          // Path B: Telegram initData
+          const v = verifyInitData(initData, token);
+          if (!v.ok || !v.user) return jerr(401, `unauthorized: ${v.reason ?? "missing initData"}`);
+          const adminEnv = process.env.ADMIN_CHAT_ID ? Number(process.env.ADMIN_CHAT_ID) : null;
+          if (v.user.id !== ADMIN_ID && (adminEnv === null || v.user.id !== adminEnv)) {
+            return jerr(403, "not admin");
+          }
+          authUser = v.user;
         }
+        const v = { ok: true as const, user: authUser };
 
         let body: unknown;
         try {

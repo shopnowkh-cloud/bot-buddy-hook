@@ -388,8 +388,12 @@ function KeywordsPanel() {
 function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => void }) {
   const qc = useQueryClient();
   const [order, setOrder] = useState<string[]>(replies.map((r) => r.keyword));
-  const [jumpFor, setJumpFor] = useState<string | null>(null);
-  const [jumpVal, setJumpVal] = useState("");
+  const [dragKw, setDragKw] = useState<string | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const dragState = useRef<{ kw: string; startY: number; offsetY: number } | null>(null);
+  const [ghost, setGhost] = useState<{ kw: string; y: number; h: number; w: number } | null>(null);
 
   const save = useMutation({
     mutationFn: (keywords: string[]) => callApi("reorder_replies", { keywords }),
@@ -402,24 +406,59 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
     save.mutate(next);
   };
 
-  const move = (idx: number, target: number) => {
-    if (target < 0 || target >= order.length || target === idx) return;
-    hapticImpact("light");
-    const next = order.slice();
-    const [k] = next.splice(idx, 1);
-    next.splice(target, 0, k);
-    commit(next);
+  const onPointerDown = (e: React.PointerEvent, kw: string) => {
+    const el = itemRefs.current.get(kw);
+    if (!el) return;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const rect = el.getBoundingClientRect();
+    const listRect = listRef.current?.getBoundingClientRect();
+    dragState.current = { kw, startY: e.clientY, offsetY: e.clientY - rect.top };
+    setDragKw(kw);
+    setGhost({ kw, y: rect.top - (listRect?.top ?? 0), h: rect.height, w: rect.width });
+    setOverIdx(order.indexOf(kw));
+    hapticImpact("medium");
   };
 
-  const jump = (idx: number) => {
-    const n = parseInt(jumpVal, 10);
-    if (!Number.isFinite(n) || n < 1 || n > order.length) {
-      toast.error(`លេខត្រូវនៅចន្លោះ 1 ដល់ ${order.length}`);
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragState.current || !listRef.current) return;
+    const listRect = listRef.current.getBoundingClientRect();
+    const rel = e.clientY - listRect.top - dragState.current.offsetY;
+    setGhost((g) => (g ? { ...g, y: rel } : g));
+    // find nearest slot
+    const centerY = e.clientY;
+    let best = 0;
+    let bestDist = Infinity;
+    order.forEach((k, i) => {
+      const el = itemRefs.current.get(k);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const c = r.top + r.height / 2;
+      const d = Math.abs(centerY - c);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    setOverIdx((prev) => {
+      if (prev !== best) hapticImpact("light");
+      return best;
+    });
+  };
+
+  const onPointerUp = () => {
+    if (!dragState.current || overIdx === null) {
+      dragState.current = null;
+      setDragKw(null); setGhost(null); setOverIdx(null);
       return;
     }
-    move(idx, n - 1);
-    setJumpFor(null);
-    setJumpVal("");
+    const kw = dragState.current.kw;
+    const from = order.indexOf(kw);
+    const to = overIdx;
+    dragState.current = null;
+    setDragKw(null); setGhost(null); setOverIdx(null);
+    if (from === to || from < 0) return;
+    const next = order.slice();
+    const [k] = next.splice(from, 1);
+    next.splice(to, 0, k);
+    hapticNotify("success");
+    commit(next);
   };
 
   return (
@@ -436,68 +475,79 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         </p>
       </div>
 
-      <div className="tg-card p-3">
-        <p className="tg-hint text-xs mb-1">↕️ តម្រៀបទីតាំងពាក្យបញ្ជា</p>
-        <p className="text-xs">ចុច 🔼 🔽 ដើម្បីប្តូរ ឬចុចលេខ # ដើម្បីលោតទៅទីតាំងណាមួយ</p>
+      <div className="tg-card p-3 flex items-center gap-2">
+        <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
+          <ArrowUpDown className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">អូសដាក់ទីតាំង</p>
+          <p className="tg-hint text-xs">ចុចសញ្ញា ⋮⋮ ខាងឆ្វេង ហើយអូសឡើង/ចុះ</p>
+        </div>
       </div>
 
-      <div className="space-y-2">
-        {order.map((kw, i) => (
-          <div key={kw} className="tg-card p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <button
-                onClick={() => { hapticImpact(); setJumpFor(jumpFor === kw ? null : kw); setJumpVal(String(i + 1)); }}
-                className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold text-sm active:scale-95"
-                aria-label="Jump"
-              >
-                #{i + 1}
-              </button>
-              <p className="font-semibold truncate flex-1">{kw}</p>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              <ReorderBtn icon={<ChevronsUp className="h-5 w-5" />} label="ដើម" disabled={i === 0} onClick={() => move(i, 0)} />
-              <ReorderBtn icon={<ArrowUp className="h-5 w-5" />} label="ឡើង" disabled={i === 0} onClick={() => move(i, i - 1)} />
-              <ReorderBtn icon={<ArrowDown className="h-5 w-5" />} label="ចុះ" disabled={i === order.length - 1} onClick={() => move(i, i + 1)} />
-              <ReorderBtn icon={<ChevronsDown className="h-5 w-5" />} label="ចុង" disabled={i === order.length - 1} onClick={() => move(i, order.length - 1)} />
-            </div>
-            {jumpFor === kw && (
-              <div className="mt-3 flex gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  max={order.length}
-                  value={jumpVal}
-                  onChange={(e) => setJumpVal(e.target.value)}
-                  placeholder={`1 - ${order.length}`}
-                  className="tg-input h-12 text-base"
-                />
-                <button
-                  onClick={() => jump(i)}
-                  className="h-12 px-4 rounded-xl bg-[var(--tg-btn)] text-white font-semibold flex items-center gap-1 active:scale-95"
+      <div
+        ref={listRef}
+        className="relative select-none"
+        style={{ touchAction: "none" }}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <div className="space-y-2">
+          {order.map((kw, i) => {
+            const isDragging = dragKw === kw;
+            const showSlotBefore = dragKw !== null && overIdx === i && order.indexOf(dragKw) !== i;
+            return (
+              <div key={kw}>
+                {showSlotBefore && (
+                  <div className="mb-2 h-14 rounded-2xl border-2 border-dashed border-[var(--tg-btn)] bg-[var(--tg-btn)]/10 grid place-items-center animate-pulse">
+                    <p className="text-[var(--tg-btn)] text-xs font-semibold">ដាក់នៅទីតាំង #{i + 1}</p>
+                  </div>
+                )}
+                <div
+                  ref={(el) => { itemRefs.current.set(kw, el); }}
+                  className={`tg-card p-3 flex items-center gap-3 transition-all ${isDragging ? "opacity-30 scale-95" : ""}`}
                 >
-                  <Check className="h-4 w-4" /> លោត
-                </button>
+                  <div
+                    onPointerDown={(e) => onPointerDown(e, kw)}
+                    className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95 cursor-grab active:cursor-grabbing"
+                    style={{ touchAction: "none" }}
+                    aria-label="Drag handle"
+                  >
+                    <GripVertical className="h-5 w-5 tg-hint" />
+                  </div>
+                  <div className="h-9 w-9 shrink-0 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold text-xs">
+                    {i + 1}
+                  </div>
+                  <p className="font-semibold truncate flex-1">{kw}</p>
+                </div>
               </div>
-            )}
+            );
+          })}
+        </div>
+
+        {ghost && (
+          <div
+            className="pointer-events-none absolute left-0 z-50"
+            style={{ top: ghost.y, width: ghost.w }}
+          >
+            <div className="tg-card p-3 flex items-center gap-3 shadow-2xl shadow-black/40 ring-2 ring-[var(--tg-btn)] bg-[var(--tg-section)] scale-[1.02]">
+              <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)] grid place-items-center">
+                <GripVertical className="h-5 w-5 text-white" />
+              </div>
+              <div className="h-9 w-9 shrink-0 rounded-lg bg-[var(--tg-btn)]/25 text-[var(--tg-btn)] grid place-items-center font-bold text-xs">
+                {overIdx !== null ? overIdx + 1 : ""}
+              </div>
+              <p className="font-semibold truncate flex-1">{ghost.kw}</p>
+            </div>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
 }
 
-function ReorderBtn({ icon, label, disabled, onClick }: { icon: React.ReactNode; label: string; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="h-12 rounded-xl bg-[var(--tg-section-2)] flex flex-col items-center justify-center gap-0.5 active:scale-95 disabled:opacity-30 disabled:active:scale-100"
-    >
-      {icon}
-      <span className="text-[10px] font-medium">{label}</span>
-    </button>
-  );
-}
+
 
 
 

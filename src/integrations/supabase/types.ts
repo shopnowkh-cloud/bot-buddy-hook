@@ -89,6 +89,7 @@ export type Database = {
           created_at: string
           delete_after_seconds: number | null
           keyword: string
+          position: number
           updated_at: string
         }
         Insert: {
@@ -96,6 +97,7 @@ export type Database = {
           created_at?: string
           delete_after_seconds?: number | null
           keyword: string
+          position?: number
           updated_at?: string
         }
         Update: {
@@ -103,6 +105,7 @@ export type Database = {
           created_at?: string
           delete_after_seconds?: number | null
           keyword?: string
+          position?: number
           updated_at?: string
         }
         Relationships: []

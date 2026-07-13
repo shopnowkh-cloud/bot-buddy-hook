@@ -49,7 +49,7 @@ export function clearReplyCache() {
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
-    supabase.from("replies").select("keyword, content, delete_after_seconds").order("created_at"),
+    supabase.from("replies").select("keyword, content, delete_after_seconds, position").order("position").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
@@ -126,7 +126,12 @@ const REPLY_COLLECT_KEYBOARD = {
 };
 
 const ACTION_KEYBOARD = {
-  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer"], ["❌ បោះបង់"]],
+  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer", "↕️ ទីតាំង"], ["❌ បោះបង់"]],
+  resize_keyboard: true,
+};
+
+const POSITION_KEYBOARD = {
+  keyboard: [["⬆️ ឡើងលើ", "⬇️ ចុះក្រោម"], ["⏫ ទៅដើម", "⏬ ទៅចុង"], ["❌ បោះបង់"]],
   resize_keyboard: true,
 };
 
@@ -903,6 +908,77 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       });
       return;
     }
+
+    if (text === "↕️ ទីតាំង") {
+      const keys = await listKeywords(supabase);
+      const idx = keys.indexOf(kw);
+      const total = keys.length;
+      const pos = idx < 0 ? "?" : `${idx + 1}/${total}`;
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\nសូមជ្រើសរើសទិសផ្លាស់ទី៖`,
+        reply_markup: POSITION_KEYBOARD,
+      });
+      return;
+    }
+
+    if (
+      text === "⬆️ ឡើងលើ" ||
+      text === "⬇️ ចុះក្រោម" ||
+      text === "⏫ ទៅដើម" ||
+      text === "⏬ ទៅចុង"
+    ) {
+      const { data: rows } = await supabase
+        .from("replies")
+        .select("keyword, position")
+        .order("position")
+        .order("created_at");
+      const list: any[] = rows ?? [];
+      const idx = list.findIndex((r) => String(r.keyword).toLowerCase() === kw);
+      if (idx < 0) {
+        await tgRequest(token, "sendMessage", { chat_id: chatId, text: "⚠️ រកមិនឃើញពាក្យ។", reply_markup: ACTION_KEYBOARD });
+        return;
+      }
+
+      // Normalize positions to 10,20,30... to give room to move
+      const normalized = list.map((r, i) => ({ keyword: r.keyword, position: (i + 1) * 10 }));
+
+      let newIdx = idx;
+      if (text === "⬆️ ឡើងលើ") newIdx = Math.max(0, idx - 1);
+      else if (text === "⬇️ ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
+      else if (text === "⏫ ទៅដើម") newIdx = 0;
+      else if (text === "⏬ ទៅចុង") newIdx = list.length - 1;
+
+      if (newIdx === idx && list.length > 1) {
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: `⚠️ ពាក្យ [${kw}] នៅ${text === "⬆️ ឡើងលើ" || text === "⏫ ទៅដើម" ? "ដើម" : "ចុង"}បញ្ជីរួចហើយ។`,
+          reply_markup: POSITION_KEYBOARD,
+        });
+        return;
+      }
+
+      // Move item to new index
+      const [moved] = normalized.splice(idx, 1);
+      normalized.splice(newIdx, 0, moved);
+      // Re-assign positions
+      const updates = normalized.map((r, i) => ({ keyword: r.keyword, position: (i + 1) * 10 }));
+      // Batch update via upsert on keyword (need content NOT NULL — so use individual updates)
+      await Promise.all(
+        updates.map((u) =>
+          supabase.from("replies").update({ position: u.position }).eq("keyword", u.keyword),
+        ),
+      );
+      clearReplyCache();
+
+      await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: `✅ បានផ្លាស់ទី [${kw}] → ទីតាំង ${newIdx + 1}/${updates.length}`,
+        reply_markup: POSITION_KEYBOARD,
+      });
+      return;
+    }
+
 
     if (text === "✏️ កែ") {
       await saveState(supabase, chatId, "waiting_reply", kw, null, []);

@@ -168,6 +168,16 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
               if (error) return jerr(500, error.message);
               return Response.json({ ok: true });
             }
+            case "reorder_replies": {
+              const now = new Date().toISOString();
+              const updates = req.keywords.map((keyword, i) =>
+                s.from("replies").update({ position: (i + 1) * 10, updated_at: now }).eq("keyword", keyword),
+              );
+              const results = await Promise.all(updates);
+              const firstErr = results.find((r) => r.error);
+              if (firstErr?.error) return jerr(500, firstErr.error.message);
+              return Response.json({ ok: true });
+            }
           }
         } catch (e: any) {
           return jerr(500, e?.message ?? "server error");

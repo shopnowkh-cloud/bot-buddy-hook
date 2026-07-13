@@ -914,13 +914,17 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       const idx = keys.indexOf(kw);
       const total = keys.length;
       const pos = idx < 0 ? "?" : `${idx + 1}/${total}`;
+      const preview = keys
+        .map((k, i) => (i === idx ? `👉 ${i + 1}. ${k}` : `   ${i + 1}. ${k}`))
+        .join("\n");
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
-        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\nសូមជ្រើសរើសទិសផ្លាស់ទី៖`,
+        text: `↕️ កំណត់ទីតាំងសម្រាប់ [${kw}]\n\n📍 ទីតាំងបច្ចុប្បន្ន: ${pos}\n\n📋 Preview លំដាប់៖\n${preview}\n\nសូមជ្រើសរើសទិសផ្លាស់ទី៖`,
         reply_markup: POSITION_KEYBOARD,
       });
       return;
     }
+
 
     if (
       text === "⬆️ ឡើងលើ" ||

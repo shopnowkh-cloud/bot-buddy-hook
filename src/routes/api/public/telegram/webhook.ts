@@ -944,12 +944,13 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     }
 
 
-    if (
+    const isDirection =
       text === "⬆️ ឡើងលើ" ||
       text === "⬇️ ចុះក្រោម" ||
       text === "⏫ ទៅដើម" ||
-      text === "⏬ ទៅចុង"
-    ) {
+      text === "⏬ ទៅចុង";
+    const numericJump = text && /^\d+$/.test(text.trim()) ? parseInt(text.trim(), 10) : null;
+    if (isDirection || numericJump !== null) {
       const { data: rows } = await supabase
         .from("replies")
         .select("keyword, position")

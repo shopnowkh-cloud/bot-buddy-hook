@@ -140,8 +140,7 @@ const POSITION_KEYBOARD = {
 // immediately so admin sees the new order right away while still being able
 // to press 🔼/🔽/◀️/▶️ to continue moving.
 function buildPositionKeyboard(keys: string[]) {
-  const kwRows: string[][] = [];
-  for (let i = 0; i < keys.length; i += 2) kwRows.push(keys.slice(i, i + 2));
+  const kwRows: string[][] = keys.map((k) => [k]);
   return {
     keyboard: [
       ...kwRows,
@@ -176,7 +175,7 @@ const KEYWORD_TIMER_KEYBOARD = {
 
 function buildListKeyboard(keys: string[]) {
   const rows: string[][] = [];
-  for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+  for (const k of keys) rows.push([k]);
   rows.push(["❌ បោះបង់"]);
   return { keyboard: rows, resize_keyboard: true };
 }
@@ -317,7 +316,7 @@ async function getEffectiveDeleteSeconds(supabase: any, match: any) {
 export function buildKeywordKeyboard(keys: string[]) {
   if (keys.length === 0) return undefined;
   const rows: string[][] = [];
-  for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2));
+  for (const k of keys) rows.push([k]);
   return { keyboard: rows, resize_keyboard: true, is_persistent: true };
 }
 

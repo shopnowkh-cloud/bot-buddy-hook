@@ -90,7 +90,7 @@ describe("buildKeywordKeyboard", () => {
 
 describe("MAIN_KEYBOARD", () => {
   it("is marked persistent so it survives chat-history clears", () => {
-    expect(MAIN_KEYBOARD.persistent).toBe(true);
+    expect(MAIN_KEYBOARD.is_persistent).toBe(true);
     expect(MAIN_KEYBOARD.resize_keyboard).toBe(true);
   });
 });
@@ -145,7 +145,7 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
       c.body.reply_markup,
     );
     expect(replySends.length).toBeGreaterThan(0);
-    expect(replySends.at(-1)!.body.reply_markup.persistent).toBe(true);
+    expect(replySends.at(-1)!.body.reply_markup.is_persistent).toBe(true);
   });
 
   it("still re-shows keyword keyboard when text does not match a keyword", async () => {
@@ -161,7 +161,7 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
     });
 
     const sendMsg = calls.find((c) => c.method === "sendMessage");
-    expect(sendMsg?.body.reply_markup?.persistent).toBe(true);
+    expect(sendMsg?.body.reply_markup?.is_persistent).toBe(true);
   });
 });
 
@@ -202,7 +202,7 @@ describe("handleMessage — admin keyboard persistence", () => {
     const sendWithKb = calls.find(
       (c) =>
         ["sendMessage", "copyMessage", "forwardMessage"].includes(c.method) &&
-        c.body.reply_markup?.persistent === true,
+        c.body.reply_markup?.is_persistent === true,
     );
     expect(sendWithKb).toBeDefined();
     expect(sendWithKb!.body.reply_markup).toEqual(MAIN_KEYBOARD);

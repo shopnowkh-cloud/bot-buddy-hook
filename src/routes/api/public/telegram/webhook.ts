@@ -131,22 +131,22 @@ const ACTION_KEYBOARD = {
 };
 
 const POSITION_KEYBOARD = {
-  keyboard: [["⬆️ ឡើងលើ", "⬇️ ចុះក្រោម"], ["⏫ ទៅដើម", "⏬ ទៅចុង"], ["❌ បោះបង់"]],
+  keyboard: [["🔼 ឡើងលើ", "🔽 ចុះក្រោម"], ["◀️ ទៅដើម", "▶️ ទៅចុង"], ["❌ បោះបង់"]],
   resize_keyboard: true,
 };
 
 // Combined keyboard: keyword rows (current order) + position controls at bottom.
 // Sending this in ONE message makes Telegram refresh the reply keyboard
 // immediately so admin sees the new order right away while still being able
-// to press ⬆️/⬇️/⏫/⏬ to continue moving.
+// to press 🔼/🔽/◀️/▶️ to continue moving.
 function buildPositionKeyboard(keys: string[]) {
   const kwRows: string[][] = [];
   for (let i = 0; i < keys.length; i += 2) kwRows.push(keys.slice(i, i + 2));
   return {
     keyboard: [
       ...kwRows,
-      ["⬆️ ឡើងលើ", "⬇️ ចុះក្រោម"],
-      ["⏫ ទៅដើម", "⏬ ទៅចុង"],
+      ["🔼 ឡើងលើ", "🔽 ចុះក្រោម"],
+      ["◀️ ទៅដើម", "▶️ ទៅចុង"],
       ["❌ បោះបង់"],
     ],
     resize_keyboard: true,
@@ -945,10 +945,10 @@ export async function handleMessage(token: string, adminId: number, supabase: an
 
 
     const isDirection =
-      text === "⬆️ ឡើងលើ" ||
-      text === "⬇️ ចុះក្រោម" ||
-      text === "⏫ ទៅដើម" ||
-      text === "⏬ ទៅចុង";
+      text === "🔼 ឡើងលើ" ||
+      text === "🔽 ចុះក្រោម" ||
+      text === "◀️ ទៅដើម" ||
+      text === "▶️ ទៅចុង";
     const numericJump = text && /^\d+$/.test(text.trim()) ? parseInt(text.trim(), 10) : null;
     if (isDirection || numericJump !== null) {
       const { data: rows } = await supabase
@@ -967,10 +967,10 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       const normalized = list.map((r, i) => ({ keyword: r.keyword, position: (i + 1) * 10 }));
 
       let newIdx = idx;
-      if (text === "⬆️ ឡើងលើ") newIdx = Math.max(0, idx - 1);
-      else if (text === "⬇️ ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
-      else if (text === "⏫ ទៅដើម") newIdx = 0;
-      else if (text === "⏬ ទៅចុង") newIdx = list.length - 1;
+      if (text === "🔼 ឡើងលើ") newIdx = Math.max(0, idx - 1);
+      else if (text === "🔽 ចុះក្រោម") newIdx = Math.min(list.length - 1, idx + 1);
+      else if (text === "◀️ ទៅដើម") newIdx = 0;
+      else if (text === "▶️ ទៅចុង") newIdx = list.length - 1;
       else if (numericJump !== null) {
         if (numericJump < 1 || numericJump > list.length) {
           const curList = normalized.map((r) => String(r.keyword).toLowerCase());

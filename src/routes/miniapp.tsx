@@ -552,7 +552,8 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
   const isDragging = dragKw !== null;
 
   return (
-    <div className="pt-2 space-y-3">
+    <div className="fixed inset-0 z-[60] bg-[var(--tg-bg)] flex flex-col">
+      <div className="flex-1 overflow-y-auto px-3 pt-2 pb-6 space-y-3">
       <div className="flex items-center gap-2">
         <button
           onClick={onClose}
@@ -707,6 +708,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

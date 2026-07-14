@@ -629,16 +629,18 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <div className="space-y-2">
+        <div className="space-y-3">
           {grid.map((row, ri) => (
             <div
               key={`row-${ri}`}
-              className="tg-card p-2 flex items-stretch gap-1.5 min-h-[56px]"
+              className="tg-card p-3 flex items-stretch gap-2 min-h-[76px]"
             >
-              <div className="w-6 shrink-0 grid place-items-center tg-hint text-[10px] font-bold">
-                {ri + 1}
+              <div className="w-8 shrink-0 grid place-items-center">
+                <div className="h-7 w-7 rounded-full bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center text-sm font-bold">
+                  {ri + 1}
+                </div>
               </div>
-              <div className="flex-1 flex flex-wrap items-stretch gap-1.5">
+              <div className="flex-1 flex flex-wrap items-stretch gap-2">
                 {row.map((kw, ci) => {
                   const dragging = dragKw === kw;
                   const showBefore =
@@ -647,21 +649,21 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
                     <React.Fragment key={kw}>
                       <div
                         ref={registerSlot(ri, ci)}
-                        className={`w-1 self-stretch rounded ${showBefore ? "bg-[var(--tg-btn)]" : ""}`}
+                        className={`w-1.5 self-stretch rounded-full transition-colors ${showBefore ? "bg-[var(--tg-btn)]" : ""}`}
                       />
                       <div
                         data-item
-                        className={`flex-1 min-w-[80px] rounded-xl bg-[var(--tg-section-2)] px-2 py-2 flex items-center gap-1.5 transition-all ${dragging ? "opacity-30 scale-95" : ""}`}
+                        className={`flex-1 min-w-[130px] rounded-2xl bg-[var(--tg-section-2)] px-3 py-3 flex items-center gap-2 shadow-sm ring-1 ring-black/5 transition-all ${dragging ? "opacity-30 scale-95" : "active:scale-[0.98]"}`}
                       >
                         <div
                           onPointerDown={(e) => onPointerDown(e, kw)}
-                          className="h-8 w-6 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing"
+                          className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/10 text-[var(--tg-btn)] grid place-items-center cursor-grab active:cursor-grabbing active:bg-[var(--tg-btn)]/25"
                           style={{ touchAction: "none" }}
                           aria-label="Drag"
                         >
-                          <GripVertical className="h-4 w-4 tg-hint" />
+                          <GripVertical className="h-5 w-5" />
                         </div>
-                        <p className="text-xs font-semibold truncate flex-1">{kw}</p>
+                        <p className="text-sm font-semibold truncate flex-1">{kw}</p>
                       </div>
                     </React.Fragment>
                   );
@@ -669,7 +671,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
                 {/* trailing slot */}
                 <div
                   ref={registerSlot(ri, row.length)}
-                  className={`w-1 self-stretch rounded ${
+                  className={`w-1.5 self-stretch rounded-full transition-colors ${
                     isDragging && overTarget?.row === ri && overTarget?.col === row.length
                       ? "bg-[var(--tg-btn)]"
                       : ""
@@ -682,10 +684,10 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
           {/* new-row drop zone */}
           <div
             ref={registerSlot(grid.length, 0)}
-            className={`h-12 rounded-2xl border-2 border-dashed grid place-items-center text-xs transition-all ${
+            className={`h-16 rounded-2xl border-2 border-dashed grid place-items-center text-sm font-semibold transition-all ${
               isDragging && overTarget?.row === grid.length
-                ? "border-[var(--tg-btn)] bg-[var(--tg-btn)]/10 text-[var(--tg-btn)] font-semibold"
-                : "border-[var(--tg-hint)]/30 tg-hint"
+                ? "border-[var(--tg-btn)] bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] scale-[1.01]"
+                : "border-[var(--tg-hint)]/40 tg-hint"
             }`}
           >
             ＋ ជួរថ្មី
@@ -697,9 +699,11 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
             className="pointer-events-none absolute z-50"
             style={{ left: ghost.x, top: ghost.y, width: ghost.w }}
           >
-            <div className="rounded-xl bg-[var(--tg-section)] ring-2 ring-[var(--tg-btn)] shadow-2xl shadow-black/40 px-2 py-2 flex items-center gap-1.5 scale-[1.03]">
-              <GripVertical className="h-4 w-4 text-[var(--tg-btn)]" />
-              <p className="text-xs font-semibold truncate">{ghost.kw}</p>
+            <div className="rounded-2xl bg-[var(--tg-section)] ring-2 ring-[var(--tg-btn)] shadow-2xl shadow-black/50 px-3 py-3 flex items-center gap-2 scale-[1.05]">
+              <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/20 text-[var(--tg-btn)] grid place-items-center">
+                <GripVertical className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-semibold truncate">{ghost.kw}</p>
             </div>
           </div>
         )}

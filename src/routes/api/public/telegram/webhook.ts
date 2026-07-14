@@ -588,44 +588,40 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
         .then(() => {}, () => groupTrackCache.delete(chatId));
     }
 
-    // Build persistent keyword keyboard (shown to all group members, stays forever)
+    // Keyword keyboard is `is_persistent: true`. In groups we ONLY (re)send it
+    // when the bot is added, or when an ADMIN types /start. After that,
+    // Telegram keeps showing it to each user who has seen it once — no need
+    // to broadcast it on every message.
     const groupRows = await listKeywordRows(supabase);
     const groupKb = buildKeywordKeyboard(groupRows);
 
-
-    // When bot is added to the group → show the keyboard once
     const botAdded = Array.isArray(msg.new_chat_members) &&
       msg.new_chat_members.some((m: any) => m?.is_bot);
     const isStartCmd = text === "/start" || text?.startsWith("/start@");
 
-    if ((botAdded || isStartCmd) && groupKb) {
-      await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "⌨️",
-        reply_markup: groupKb,
-      });
-      return;
+    if (groupKb && (botAdded || isStartCmd)) {
+      const { isAdminUserId } = await import("@/lib/admin-config.server");
+      const allowed = botAdded || (await isAdminUserId(msg.from?.id));
+      if (allowed) {
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: "⌨️",
+          reply_markup: groupKb,
+        });
+      }
+      if (isStartCmd) return;
     }
 
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
-        // Re-attach keyboard so it persists forever in the group
-        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, groupKb);
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
         return;
       }
     }
 
-    // No match (or non-text): behave like the earlier long-polling bot and
-    // always send the full group keyword keyboard again, without per-user cache
-    // or selective mode, so it remains visible in the group.
-    if (groupKb) {
-      await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "⌨️",
-        reply_markup: groupKb,
-      }).catch(() => {});
-    }
+    // No keyword match → do nothing. Keyboard already persists for users
+    // who have seen it via /start.
     return;
   }
 

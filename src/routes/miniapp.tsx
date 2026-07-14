@@ -766,10 +766,17 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
     <div
       className="tg-app fixed inset-0 z-[9999] flex flex-col w-screen h-screen"
       style={{
+        ["--tg-bg" as string]: "#17212b",
+        ["--tg-section" as string]: "#232e3c",
+        ["--tg-section-2" as string]: "#2b3747",
+        ["--tg-text" as string]: "#f8fafc",
+        ["--tg-hint" as string]: "#9fb1c1",
+        ["--tg-btn" as string]: "#2ea6ff",
+        ["--tg-btn-text" as string]: "#ffffff",
         height: "100dvh",
         minHeight: "100vh",
-        backgroundColor: "var(--tg-bg, var(--tg-theme-bg-color, #17212b))",
-        color: "var(--tg-text, var(--tg-theme-text-color, #ffffff))",
+        backgroundColor: "#17212b",
+        color: "#f8fafc",
         WebkitTransform: "translateZ(0)",
       }}
     >

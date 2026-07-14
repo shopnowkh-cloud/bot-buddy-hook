@@ -164,9 +164,16 @@ const KEYWORD_TIMER_KEYBOARD = {
   resize_keyboard: true,
 };
 
-function buildListKeyboard(keys: string[]) {
+function buildListKeyboard(keysOrRows: string[] | string[][]) {
   const rows: string[][] = [];
-  for (const k of keys) rows.push([k]);
+  if (Array.isArray(keysOrRows[0])) {
+    for (const r of keysOrRows as string[][]) {
+      const clean = r.filter(Boolean);
+      if (clean.length > 0) rows.push(clean);
+    }
+  } else {
+    for (const k of keysOrRows as string[]) rows.push([k]);
+  }
   rows.push(["❌ បោះបង់"]);
   return { keyboard: rows, resize_keyboard: true };
 }
@@ -874,7 +881,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-      reply_markup: buildListKeyboard(keys),
+      reply_markup: buildListKeyboard(await listKeywordRows(supabase)),
     });
     return;
   }
@@ -959,7 +966,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
         await tgRequest(token, "sendMessage", {
           chat_id: chatId,
           text: `🗑 បានលុបពាក្យ [${kw}] រួចរាល់។\n\n📋 បញ្ជីពាក្យ (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-          reply_markup: buildListKeyboard(keys),
+          reply_markup: buildListKeyboard(await listKeywordRows(supabase)),
         });
       }
       return;

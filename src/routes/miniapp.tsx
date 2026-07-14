@@ -421,10 +421,19 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
   const dragState = useRef<{ kw: string; offsetX: number; offsetY: number } | null>(null);
   const [ghost, setGhost] = useState<{ kw: string; x: number; y: number; w: number } | null>(null);
 
+  const [justSynced, setJustSynced] = useState(false);
+  const syncedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const save = useMutation({
     mutationFn: (rows: string[][]) => callApi("reorder_replies_grid", { rows }),
-    onSuccess: () => { hapticNotify("success"); qc.invalidateQueries({ queryKey: ["replies"] }); },
-    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+    onSuccess: () => {
+      hapticNotify("success");
+      qc.invalidateQueries({ queryKey: ["replies"] });
+      setJustSynced(true);
+      if (syncedTimer.current) clearTimeout(syncedTimer.current);
+      syncedTimer.current = setTimeout(() => setJustSynced(false), 2200);
+      toast.success("✅ បាន Sync ទៅ Telegram keyboard");
+    },
+    onError: (e: Error) => { hapticNotify("error"); toast.error("❌ Sync បរាជ័យ: " + e.message); },
   });
 
   const commit = (next: string[][]) => {

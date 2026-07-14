@@ -369,34 +369,44 @@ async function sendReplies(
 ) {
   const list = Array.isArray(content) ? content : [content];
 
-  // Group consecutive items so that copy-items sharing the same media_group_id
-  // (and same source chat + forward flag) are sent as a single album via
-  // copyMessages, preserving Telegram's album grouping.
+  // Group items by media_group_id so an original Telegram album is re-sent as
+  // a single album via copyMessages — preserving the album grouping, the
+  // caption(s), and the original photo/video order.
+  //
+  // Grouping is robust to two real-world edge cases:
+  //  1. Webhook updates for an album can arrive out of order, so items with
+  //     the same media_group_id might not be consecutive in `list`.
+  //  2. Inside each album we always send by ascending message_id, which is
+  //     the order Telegram uses for the original album (and the only order
+  //     that keeps the caption attached to the correct item).
   type Group =
-    | { kind: "album"; items: any[]; indices: number[] }
+    | { kind: "album"; items: any[]; anchor: number; lastOriginalIdx: number }
     | { kind: "single"; item: any; index: number };
+
   const groups: Group[] = [];
+  const albumByKey = new Map<string, Group & { kind: "album" }>();
+
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
-    const last = groups[groups.length - 1];
-    if (
-      item?.type === "copy" &&
-      item.media_group_id &&
-      !item.forward &&
-      last &&
-      last.kind === "album" &&
-      last.items[0].media_group_id === item.media_group_id &&
-      last.items[0].from_chat_id === item.from_chat_id &&
-      last.items.length < 10
-    ) {
-      last.items.push(item);
-      last.indices.push(i);
-    } else if (
-      item?.type === "copy" &&
-      item.media_group_id &&
-      !item.forward
-    ) {
-      groups.push({ kind: "album", items: [item], indices: [i] });
+    const isAlbumItem =
+      item?.type === "copy" && item.media_group_id && !item.forward;
+
+    if (isAlbumItem) {
+      const key = `${item.from_chat_id}::${item.media_group_id}`;
+      const existing = albumByKey.get(key);
+      if (existing && existing.items.length < 10) {
+        existing.items.push(item);
+        existing.lastOriginalIdx = Math.max(existing.lastOriginalIdx, i);
+        continue;
+      }
+      const g: Group & { kind: "album" } = {
+        kind: "album",
+        items: [item],
+        anchor: i,
+        lastOriginalIdx: i,
+      };
+      albumByKey.set(key, g);
+      groups.push(g);
     } else {
       groups.push({ kind: "single", item, index: i });
     }
@@ -408,36 +418,48 @@ async function sendReplies(
   for (const g of groups) {
     if (g.kind === "album" && g.items.length >= 2) {
       const first = g.items[0];
-      const messageIds = g.items.map((it) => it.message_id).sort((a, b) => a - b);
+      // Ascending message_id = original album order → caption stays on the
+      // right item and photos/videos appear in the correct sequence.
+      const messageIds = g.items
+        .map((it) => it.message_id)
+        .sort((a, b) => a - b);
       const res = await tgRequest(token, "copyMessages", {
         chat_id: chatId,
         from_chat_id: first.from_chat_id,
         message_ids: messageIds,
+        // Explicit: keep the original album caption(s) exactly as authored.
+        remove_caption: false,
       });
       if (!res?.ok) {
-        console.error("copyMessages failed", { chatId, description: res?.description });
+        console.error("copyMessages failed", {
+          chatId,
+          description: res?.description,
+        });
       } else if (autoDeleteSeconds > 0 && Array.isArray(res.result)) {
-        const deleteAt = new Date(Date.now() + autoDeleteSeconds * 1000).toISOString();
+        const deleteAt = new Date(
+          Date.now() + autoDeleteSeconds * 1000,
+        ).toISOString();
         for (const r of res.result) {
           if (r?.message_id) {
-            pendingRows.push({ chat_id: chatId, message_id: r.message_id, delete_at: deleteAt });
+            pendingRows.push({
+              chat_id: chatId,
+              message_id: r.message_id,
+              delete_at: deleteAt,
+            });
           }
         }
       }
-      // If this album is the last group, we still need to attach the keyboard —
-      // copyMessages doesn't support reply_markup, so send an empty follow-up
-      // isn't ideal; instead, we attach the keyboard on the next fallback below.
-      if (replyMarkup && g.indices.includes(lastIdx)) {
-        // Send an invisible follow-up? Better: re-send keyboard by editing a no-op.
-        // Simplest: attach keyboard via a tiny zero-width message so it sticks.
-        // We prefer just skipping — the persistent keyboard is re-attached on
-        // subsequent replies anyway. Groups keep is_persistent so it stays.
-      }
+      // copyMessages doesn't support reply_markup. When this album is the
+      // last group and a keyboard was requested, the persistent
+      // ReplyKeyboardMarkup (is_persistent: true) from prior/subsequent
+      // messages keeps it visible in groups; no follow-up needed.
     } else {
       const items = g.kind === "album" ? g.items : [g.item];
-      const indices = g.kind === "album" ? g.indices : [g.index];
+      // For a "degenerate" single-item album, treat the anchor position as
+      // the item's index; otherwise use the recorded single index.
+      const originalIdx = g.kind === "album" ? g.anchor : g.index;
       for (let k = 0; k < items.length; k++) {
-        const isLast = indices[k] === lastIdx;
+        const isLast = originalIdx === lastIdx && k === items.length - 1;
         const row = await sendReply(
           token,
           supabase,

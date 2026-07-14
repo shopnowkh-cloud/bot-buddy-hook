@@ -966,7 +966,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
         await tgRequest(token, "sendMessage", {
           chat_id: chatId,
           text: `🗑 បានលុបពាក្យ [${kw}] រួចរាល់។\n\n📋 បញ្ជីពាក្យ (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-          reply_markup: buildListKeyboard(keys),
+          reply_markup: buildListKeyboard(await listKeywordRows(supabase)),
         });
       }
       return;

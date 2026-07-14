@@ -143,6 +143,10 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
                 { onConflict: "keyword" },
               );
               if (error) return jerr(500, error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
               return Response.json({ ok: true });
             }
             case "set_keyword_timer": {
@@ -154,11 +158,19 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
                 })
                 .eq("keyword", req.keyword);
               if (error) return jerr(500, error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
               return Response.json({ ok: true });
             }
             case "delete_reply": {
               const { error } = await s.from("replies").delete().eq("keyword", req.keyword);
               if (error) return jerr(500, error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
               return Response.json({ ok: true });
             }
             case "clear_pending": {

@@ -33,6 +33,14 @@ import {
   Loader2,
   CheckCircle2,
   Send,
+  Images,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  Music,
+  FileText,
+  Sticker,
+  Film,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -50,10 +58,14 @@ export const Route = createFileRoute("/miniapp")({
 });
 
 type ContentItem = {
-  type: "text" | "photo" | "video" | "audio" | "voice" | "document" | "animation" | "sticker";
+  type: "text" | "photo" | "video" | "audio" | "voice" | "document" | "animation" | "sticker" | "copy";
   text?: string;
   file_id?: string;
   caption?: string;
+  media_group_id?: string;
+  from_chat_id?: number;
+  message_id?: number;
+  forward?: boolean;
 };
 type Reply = {
   keyword: string;
@@ -63,6 +75,136 @@ type Reply = {
   position?: number;
   row_index?: number;
 };
+
+type ContentBlock =
+  | { kind: "album"; items: ContentItem[]; startIndex: number }
+  | { kind: "single"; item: ContentItem; index: number };
+
+/**
+ * Groups content items by media_group_id so an album (multiple photos/videos
+ * sent together in Telegram) is treated as a single block — mirroring what
+ * the bot sends via copyMessages.
+ */
+function groupContent(items: ContentItem[]): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  const albumByKey = new Map<string, ContentBlock & { kind: "album" }>();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const gid = it?.media_group_id;
+    if (gid && it.type === "copy" && !it.forward) {
+      const key = `${it.from_chat_id ?? "?"}::${gid}`;
+      const existing = albumByKey.get(key);
+      if (existing && existing.items.length < 10) {
+        existing.items.push(it);
+        continue;
+      }
+      const g: ContentBlock & { kind: "album" } = { kind: "album", items: [it], startIndex: i };
+      albumByKey.set(key, g);
+      blocks.push(g);
+    } else {
+      blocks.push({ kind: "single", item: it, index: i });
+    }
+  }
+  // Sort album items by message_id so the preview matches the bot's send order.
+  for (const b of blocks) {
+    if (b.kind === "album") {
+      b.items.sort((a, c) => (a.message_id ?? 0) - (c.message_id ?? 0));
+    }
+  }
+  return blocks;
+}
+
+function itemTypeIcon(type: ContentItem["type"]) {
+  switch (type) {
+    case "photo": return <ImageIcon className="h-5 w-5" />;
+    case "video": return <Video className="h-5 w-5" />;
+    case "animation": return <Film className="h-5 w-5" />;
+    case "audio": return <Music className="h-5 w-5" />;
+    case "voice": return <Mic className="h-5 w-5" />;
+    case "document": return <FileText className="h-5 w-5" />;
+    case "sticker": return <Sticker className="h-5 w-5" />;
+    default: return <ImageIcon className="h-5 w-5" />;
+  }
+}
+
+/**
+ * Renders content items as a preview, grouping album items (same media_group_id)
+ * into a SINGLE gallery block — mirroring how Telegram displays albums in the bot.
+ */
+function MediaPreview({ items }: { items: ContentItem[] }) {
+  const blocks = groupContent(items);
+  if (blocks.length === 0) return null;
+  return (
+    <div className="tg-card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Images className="h-4 w-4 tg-hint" />
+        <Label className="tg-hint text-xs">ការមើលជាមុន (ដូចក្នុង Telegram)</Label>
+      </div>
+      <div className="space-y-2">
+        {blocks.map((b, bi) => {
+          if (b.kind === "album") {
+            const cols = b.items.length >= 4 ? 3 : b.items.length >= 2 ? 2 : 1;
+            return (
+              <div
+                key={`a-${bi}`}
+                className="rounded-2xl overflow-hidden border border-[var(--tg-btn)]/30 bg-[var(--tg-section-2)]"
+              >
+                <div className="flex items-center justify-between px-3 py-2 bg-[var(--tg-btn)]/10">
+                  <span className="text-xs font-semibold flex items-center gap-1.5">
+                    <Images className="h-3.5 w-3.5" /> Album
+                  </span>
+                  <span className="tg-hint text-xs">{b.items.length} media</span>
+                </div>
+                <div
+                  className="grid gap-0.5 p-0.5"
+                  style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+                >
+                  {b.items.map((it, ii) => (
+                    <div
+                      key={ii}
+                      className="aspect-square bg-[var(--tg-bg)]/60 grid place-items-center text-[var(--tg-btn)]"
+                    >
+                      {itemTypeIcon(it.type === "copy" ? "photo" : it.type)}
+                    </div>
+                  ))}
+                </div>
+                {b.items.some((it) => it.caption) && (
+                  <p className="px-3 py-2 text-sm border-t border-[var(--tg-btn)]/10 line-clamp-2">
+                    {b.items.find((it) => it.caption)?.caption}
+                  </p>
+                )}
+              </div>
+            );
+          }
+          const it = b.item;
+          if (it.type === "text") {
+            return (
+              <div
+                key={`s-${bi}`}
+                className="rounded-2xl bg-[var(--tg-section-2)] px-3 py-2 text-sm whitespace-pre-wrap"
+              >
+                {it.text || <span className="tg-hint">(ទទេ)</span>}
+              </div>
+            );
+          }
+          return (
+            <div
+              key={`s-${bi}`}
+              className="rounded-2xl bg-[var(--tg-section-2)] px-3 py-2 flex items-center gap-2 text-sm"
+            >
+              <span className="h-8 w-8 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
+                {itemTypeIcon(it.type)}
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {it.caption || <span className="tg-hint capitalize">{it.type}</span>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 type PendingRow = {
   id: number;
@@ -373,7 +515,15 @@ function KeywordsPanel() {
             <button onClick={() => setEditing(r)} className="min-w-0 flex-1 text-left active:opacity-70">
               <p className="font-semibold truncate">{r.keyword}</p>
               <p className="tg-hint text-xs flex items-center gap-1 mt-0.5">
-                <Clock className="h-3 w-3" /> {fmtDelay(r.delete_after_seconds)} · {Array.isArray(r.content) ? r.content.length : 1} សារ
+                <Clock className="h-3 w-3" /> {fmtDelay(r.delete_after_seconds)} · {(() => {
+                  const items = Array.isArray(r.content) ? r.content : [];
+                  const blocks = groupContent(items);
+                  const albums = blocks.filter((b) => b.kind === "album").length;
+                  const singles = blocks.filter((b) => b.kind === "single").length;
+                  if (albums > 0 && singles > 0) return `${albums} album · ${singles} សារ`;
+                  if (albums > 0) return `${albums} album (${items.length} media)`;
+                  return `${items.length} សារ`;
+                })()}
               </p>
             </button>
             <button
@@ -808,6 +958,10 @@ function ReplyEditor({ initial, onClose, onSaved }: { initial: Reply | null; onC
           {hasMedia && <p className="tg-hint text-xs mt-1">មាន media — អាចកែតែអត្ថបទ។</p>}
         </div>
       </div>
+
+      {initial && Array.isArray(initial.content) && initial.content.length > 0 && (
+        <MediaPreview items={initial.content} />
+      )}
 
       <div className="tg-card p-4 space-y-3">
         <Label className="tg-hint text-xs">Timer លុបសារ (វិនាទី)</Label>

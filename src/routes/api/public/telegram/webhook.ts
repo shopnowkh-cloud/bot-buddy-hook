@@ -202,7 +202,7 @@ function parseTimerLabel(label: string | undefined): number | null {
 // Reply content extraction (same shape as bot.js)
 // ---------------------------------------------------------------------------
 type ReplyContent =
-  | { type: "copy"; from_chat_id: number; message_id: number; forward: boolean }
+  | { type: "copy"; from_chat_id: number; message_id: number; forward: boolean; media_group_id?: string }
   | { type: "text"; content: string }
   | { type: "photo"; content: string; caption?: string }
   | { type: "video"; content: string; caption?: string }
@@ -224,6 +224,7 @@ function getReplyContent(msg: any): ReplyContent | null {
     from_chat_id: msg.chat.id,
     message_id: msg.message_id,
     forward: isForwarded,
+    ...(msg.media_group_id ? { media_group_id: String(msg.media_group_id) } : {}),
   };
 }
 

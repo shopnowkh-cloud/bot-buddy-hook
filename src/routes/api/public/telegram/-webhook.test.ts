@@ -172,6 +172,48 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
   });
 });
 
+describe("handleUserMessage — group keyboard persistence", () => {
+  beforeEach(() => {
+    clearReplyCache();
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the full keyword keyboard on every unmatched group message", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group", title: "Test Group" },
+      from: { id: 10 },
+      message_id: 1,
+      text: "first unmatched",
+    });
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group", title: "Test Group" },
+      from: { id: 10 },
+      message_id: 2,
+      text: "second unmatched",
+    });
+
+    const keyboardSends = calls.filter((c) => c.method === "sendMessage" && c.body.chat_id === -100);
+    expect(keyboardSends.length).toBe(2);
+    expect(keyboardSends[0].body.reply_markup).toEqual({
+      keyboard: [["hi"]],
+      resize_keyboard: true,
+      is_persistent: true,
+    });
+    expect(keyboardSends[1].body.reply_markup).toEqual({
+      keyboard: [["hi"]],
+      resize_keyboard: true,
+      is_persistent: true,
+    });
+    expect(keyboardSends[0].body.reply_markup.selective).toBeUndefined();
+    expect(keyboardSends[1].body.reply_markup.selective).toBeUndefined();
+  });
+});
+
 describe("handleMessage — admin keyboard persistence", () => {
   beforeEach(() => {
     clearReplyCache();

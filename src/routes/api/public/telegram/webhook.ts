@@ -388,11 +388,13 @@ async function sendReplies(
 
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
-    const isAlbumItem =
-      item?.type === "copy" && item.media_group_id && !item.forward;
+    // Group by media_group_id regardless of forward flag — a forwarded album
+    // is still an album; we just re-send it with forwardMessages instead of
+    // copyMessages so the "Forwarded from" header is preserved.
+    const isAlbumItem = item?.type === "copy" && item.media_group_id;
 
     if (isAlbumItem) {
-      const key = `${item.from_chat_id}::${item.media_group_id}`;
+      const key = `${item.from_chat_id}::${item.media_group_id}::${item.forward ? "fwd" : "cpy"}`;
       const existing = albumByKey.get(key);
       if (existing && existing.items.length < 10) {
         existing.items.push(item);
@@ -423,15 +425,18 @@ async function sendReplies(
       const messageIds = g.items
         .map((it) => it.message_id)
         .sort((a, b) => a - b);
-      const res = await tgRequest(token, "copyMessages", {
+      const isForward = !!first.forward;
+      const method = isForward ? "forwardMessages" : "copyMessages";
+      const payload: any = {
         chat_id: chatId,
         from_chat_id: first.from_chat_id,
         message_ids: messageIds,
-        // Explicit: keep the original album caption(s) exactly as authored.
-        remove_caption: false,
-      });
+      };
+      // copyMessages supports remove_caption; forwardMessages does not.
+      if (!isForward) payload.remove_caption = false;
+      const res = await tgRequest(token, method, payload);
       if (!res?.ok) {
-        console.error("copyMessages failed", {
+        console.error(`${method} failed`, {
           chatId,
           description: res?.description,
         });

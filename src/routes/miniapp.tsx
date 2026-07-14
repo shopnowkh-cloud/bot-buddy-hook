@@ -544,6 +544,46 @@ function KeywordsPanel() {
 
 const MAX_PER_ROW = 4;
 
+const REORDER_COLORS = {
+  bg: "#17212b",
+  surface: "#232e3c",
+  elevated: "#2b3747",
+  text: "#f8fafc",
+  hint: "#9fb1c1",
+  button: "#2ea6ff",
+  buttonText: "#ffffff",
+};
+
+const reorderThemeStyle = {
+  "--tg-bg": REORDER_COLORS.bg,
+  "--tg-section": REORDER_COLORS.surface,
+  "--tg-section-2": REORDER_COLORS.elevated,
+  "--tg-text": REORDER_COLORS.text,
+  "--tg-hint": REORDER_COLORS.hint,
+  "--tg-btn": REORDER_COLORS.button,
+  "--tg-btn-text": REORDER_COLORS.buttonText,
+  backgroundColor: REORDER_COLORS.bg,
+  color: REORDER_COLORS.text,
+} as React.CSSProperties;
+
+const reorderSurfaceStyle = {
+  backgroundColor: REORDER_COLORS.surface,
+  color: REORDER_COLORS.text,
+} as React.CSSProperties;
+
+const reorderElevatedStyle = {
+  backgroundColor: REORDER_COLORS.elevated,
+  color: REORDER_COLORS.text,
+} as React.CSSProperties;
+
+const reorderHintStyle = {
+  color: REORDER_COLORS.hint,
+} as React.CSSProperties;
+
+const reorderAccentStyle = {
+  color: REORDER_COLORS.button,
+} as React.CSSProperties;
+
 function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => void }) {
   const qc = useQueryClient();
 
@@ -766,17 +806,9 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
     <div
       className="tg-app fixed inset-0 z-[9999] flex flex-col w-screen h-screen"
       style={{
-        ["--tg-bg" as string]: "#17212b",
-        ["--tg-section" as string]: "#232e3c",
-        ["--tg-section-2" as string]: "#2b3747",
-        ["--tg-text" as string]: "#f8fafc",
-        ["--tg-hint" as string]: "#9fb1c1",
-        ["--tg-btn" as string]: "#2ea6ff",
-        ["--tg-btn-text" as string]: "#ffffff",
+        ...reorderThemeStyle,
         height: "100dvh",
         minHeight: "100vh",
-        backgroundColor: "#17212b",
-        color: "#f8fafc",
         WebkitTransform: "translateZ(0)",
       }}
     >
@@ -787,6 +819,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         <button
           onClick={onClose}
           className="flex items-center gap-1 tg-hint text-sm px-2 py-2 active:opacity-70"
+          style={reorderHintStyle}
         >
           <ChevronLeft className="h-4 w-4" /> រួចរាល់
         </button>
@@ -799,6 +832,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
               ? "bg-green-500/15 text-green-500"
               : "tg-hint opacity-70"
           }`}
+          style={!save.isPending && !justSynced ? reorderHintStyle : undefined}
         >
           {save.isPending ? (
             <>
@@ -841,13 +875,13 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         </div>
       )}
 
-      <div className="tg-card p-3 flex items-center gap-2">
-        <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
+      <div className="tg-card p-3 flex items-center gap-2" style={reorderSurfaceStyle}>
+        <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center" style={reorderAccentStyle}>
           <ArrowUpDown className="h-4 w-4" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">អូសដាក់ជា Grid</p>
-          <p className="tg-hint text-xs">មួយជួរបាន 1–{MAX_PER_ROW} ពាក្យ · អូសទៅជួរណាក៏បាន</p>
+          <p className="tg-hint text-xs" style={reorderHintStyle}>មួយជួរបាន 1–{MAX_PER_ROW} ពាក្យ · អូសទៅជួរណាក៏បាន</p>
         </div>
       </div>
 
@@ -861,9 +895,10 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
             <div
               key={`row-${ri}`}
               className="tg-card p-3 flex items-stretch gap-2 min-h-[76px]"
+              style={reorderSurfaceStyle}
             >
               <div className="w-8 shrink-0 grid place-items-center">
-                <div className="h-7 w-7 rounded-full bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center text-sm font-bold">
+                <div className="h-7 w-7 rounded-full bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center text-sm font-bold" style={reorderAccentStyle}>
                   {ri + 1}
                 </div>
               </div>
@@ -881,13 +916,14 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
                       <div
                         data-item
                         className={`flex-1 min-w-[130px] rounded-2xl bg-[var(--tg-section-2)] px-3 py-3 flex items-center gap-2 shadow-sm ring-1 ring-black/5 transition-all ${dragging ? "opacity-30 scale-95" : "active:scale-[0.98]"}`}
+                        style={reorderElevatedStyle}
                       >
                         <div
                           onPointerDown={(e) => onPointerDown(e, kw)}
                           onTouchStart={(e) => onTouchStart(e, kw)}
                           onContextMenu={(e) => e.preventDefault()}
                           className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/10 text-[var(--tg-btn)] grid place-items-center cursor-grab active:cursor-grabbing active:bg-[var(--tg-btn)]/25"
-                          style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
+                          style={{ ...reorderAccentStyle, touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                           aria-label="Drag"
                         >
                           <GripVertical className="h-5 w-5 pointer-events-none" />
@@ -918,6 +954,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
                 ? "border-[var(--tg-btn)] bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] scale-[1.01]"
                 : "border-[var(--tg-hint)]/40 tg-hint"
             }`}
+            style={isDragging && overTarget?.row === grid.length ? reorderAccentStyle : reorderHintStyle}
           >
             ＋ ជួរថ្មី
           </div>
@@ -928,8 +965,8 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
             className="pointer-events-none absolute z-50"
             style={{ left: ghost.x, top: ghost.y, width: ghost.w }}
           >
-            <div className="rounded-2xl bg-[var(--tg-section)] ring-2 ring-[var(--tg-btn)] shadow-2xl shadow-black/50 px-3 py-3 flex items-center gap-2 scale-[1.05]">
-              <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/20 text-[var(--tg-btn)] grid place-items-center">
+            <div className="rounded-2xl bg-[var(--tg-section)] ring-2 ring-[var(--tg-btn)] shadow-2xl shadow-black/50 px-3 py-3 flex items-center gap-2 scale-[1.05]" style={{ ...reorderSurfaceStyle, borderColor: REORDER_COLORS.button }}>
+              <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/20 text-[var(--tg-btn)] grid place-items-center" style={reorderAccentStyle}>
                 <GripVertical className="h-5 w-5" />
               </div>
               <p className="text-sm font-semibold truncate">{ghost.kw}</p>

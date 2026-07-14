@@ -177,13 +177,13 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
   });
 });
 
-describe("handleUserMessage — group keyboard persistence", () => {
+describe("handleUserMessage — group keyboard behavior", () => {
   beforeEach(() => {
     clearReplyCache();
     vi.unstubAllGlobals();
   });
 
-  it("sends the full keyword keyboard on every unmatched group message", async () => {
+  it("does NOT send keyboard on unmatched non-admin group messages", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
@@ -191,31 +191,51 @@ describe("handleUserMessage — group keyboard persistence", () => {
 
     await handleUserMessage("TOKEN", supabase, {
       chat: { id: -100, type: "group", title: "Test Group" },
-      from: { id: 10 },
+      from: { id: 10 }, // non-admin
       message_id: 1,
-      text: "first unmatched",
-    });
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: -100, type: "group", title: "Test Group" },
-      from: { id: 10 },
-      message_id: 2,
-      text: "second unmatched",
+      text: "random gibberish",
     });
 
     const keyboardSends = calls.filter((c) => c.method === "sendMessage" && c.body.chat_id === -100);
-    expect(keyboardSends.length).toBe(2);
-    expect(keyboardSends[0].body.reply_markup).toEqual({
+    expect(keyboardSends.length).toBe(0);
+  });
+
+  it("sends the persistent keyboard when ADMIN types /start in a group", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group", title: "Test Group" },
+      from: { id: 1 }, // admin (see mock at top of file)
+      message_id: 1,
+      text: "/start",
+    });
+
+    const sendMsg = calls.find((c) => c.method === "sendMessage" && c.body.chat_id === -100);
+    expect(sendMsg).toBeDefined();
+    expect(sendMsg!.body.reply_markup).toEqual({
       keyboard: [["hi"]],
       resize_keyboard: true,
       is_persistent: true,
     });
-    expect(keyboardSends[1].body.reply_markup).toEqual({
-      keyboard: [["hi"]],
-      resize_keyboard: true,
-      is_persistent: true,
+  });
+
+  it("does NOT send keyboard when NON-admin types /start in a group", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
     });
-    expect(keyboardSends[0].body.reply_markup.selective).toBeUndefined();
-    expect(keyboardSends[1].body.reply_markup.selective).toBeUndefined();
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group" },
+      from: { id: 10 },
+      message_id: 1,
+      text: "/start",
+    });
+
+    expect(calls.filter((c) => c.method === "sendMessage" && c.body.chat_id === -100).length).toBe(0);
   });
 });
 

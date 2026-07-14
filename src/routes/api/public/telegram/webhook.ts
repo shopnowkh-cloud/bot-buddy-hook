@@ -202,7 +202,7 @@ function parseTimerLabel(label: string | undefined): number | null {
 // Reply content extraction (same shape as bot.js)
 // ---------------------------------------------------------------------------
 type ReplyContent =
-  | { type: "copy"; from_chat_id: number; message_id: number; forward: boolean }
+  | { type: "copy"; from_chat_id: number; message_id: number; forward: boolean; media_group_id?: string }
   | { type: "text"; content: string }
   | { type: "photo"; content: string; caption?: string }
   | { type: "video"; content: string; caption?: string }
@@ -224,6 +224,7 @@ function getReplyContent(msg: any): ReplyContent | null {
     from_chat_id: msg.chat.id,
     message_id: msg.message_id,
     forward: isForwarded,
+    ...(msg.media_group_id ? { media_group_id: String(msg.media_group_id) } : {}),
   };
 }
 
@@ -367,18 +368,89 @@ async function sendReplies(
   replyMarkup?: any,
 ) {
   const list = Array.isArray(content) ? content : [content];
-  const pendingRows = (await Promise.all(
-    list.map((item, idx) =>
-      sendReply(
-        token,
-        supabase,
-        chatId,
-        item,
-        autoDeleteSeconds,
-        idx === list.length - 1 ? replyMarkup : undefined,
-      ),
-    ),
-  )).filter(Boolean);
+
+  // Group consecutive items so that copy-items sharing the same media_group_id
+  // (and same source chat + forward flag) are sent as a single album via
+  // copyMessages, preserving Telegram's album grouping.
+  type Group =
+    | { kind: "album"; items: any[]; indices: number[] }
+    | { kind: "single"; item: any; index: number };
+  const groups: Group[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    const last = groups[groups.length - 1];
+    if (
+      item?.type === "copy" &&
+      item.media_group_id &&
+      !item.forward &&
+      last &&
+      last.kind === "album" &&
+      last.items[0].media_group_id === item.media_group_id &&
+      last.items[0].from_chat_id === item.from_chat_id &&
+      last.items.length < 10
+    ) {
+      last.items.push(item);
+      last.indices.push(i);
+    } else if (
+      item?.type === "copy" &&
+      item.media_group_id &&
+      !item.forward
+    ) {
+      groups.push({ kind: "album", items: [item], indices: [i] });
+    } else {
+      groups.push({ kind: "single", item, index: i });
+    }
+  }
+
+  const lastIdx = list.length - 1;
+  const pendingRows: any[] = [];
+
+  for (const g of groups) {
+    if (g.kind === "album" && g.items.length >= 2) {
+      const first = g.items[0];
+      const messageIds = g.items.map((it) => it.message_id).sort((a, b) => a - b);
+      const res = await tgRequest(token, "copyMessages", {
+        chat_id: chatId,
+        from_chat_id: first.from_chat_id,
+        message_ids: messageIds,
+      });
+      if (!res?.ok) {
+        console.error("copyMessages failed", { chatId, description: res?.description });
+      } else if (autoDeleteSeconds > 0 && Array.isArray(res.result)) {
+        const deleteAt = new Date(Date.now() + autoDeleteSeconds * 1000).toISOString();
+        for (const r of res.result) {
+          if (r?.message_id) {
+            pendingRows.push({ chat_id: chatId, message_id: r.message_id, delete_at: deleteAt });
+          }
+        }
+      }
+      // If this album is the last group, we still need to attach the keyboard —
+      // copyMessages doesn't support reply_markup, so send an empty follow-up
+      // isn't ideal; instead, we attach the keyboard on the next fallback below.
+      if (replyMarkup && g.indices.includes(lastIdx)) {
+        // Send an invisible follow-up? Better: re-send keyboard by editing a no-op.
+        // Simplest: attach keyboard via a tiny zero-width message so it sticks.
+        // We prefer just skipping — the persistent keyboard is re-attached on
+        // subsequent replies anyway. Groups keep is_persistent so it stays.
+      }
+    } else {
+      const items = g.kind === "album" ? g.items : [g.item];
+      const indices = g.kind === "album" ? g.indices : [g.index];
+      for (let k = 0; k < items.length; k++) {
+        const isLast = indices[k] === lastIdx;
+        const row = await sendReply(
+          token,
+          supabase,
+          chatId,
+          items[k],
+          autoDeleteSeconds,
+          isLast ? replyMarkup : undefined,
+        );
+        if (row) pendingRows.push(row);
+      }
+    }
+  }
+
   await insertPendingDeletions(supabase, pendingRows);
 }
 

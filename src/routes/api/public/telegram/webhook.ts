@@ -1248,10 +1248,11 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
                 }
 
                 if (inline.method) {
-                  // Attach persistent keyword keyboard so it stays forever in the group
-                  const kb = buildKeywordKeyboard(cache.rowsOrder);
+                  // Do NOT attach the keyword keyboard here — in groups it is
+                  // only (re)shown when an admin types /start. Since the
+                  // keyboard is persistent, it stays for every user that has
+                  // already seen it.
 
-                  if (kb) inline.reply_markup = kb;
                   // We can't get the sent message_id from an inline response,
                   // so auto-delete for inline sends is best-effort skipped.
                   if (effective > 0) {

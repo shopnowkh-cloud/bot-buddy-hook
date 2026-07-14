@@ -560,10 +560,56 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         >
           <ChevronLeft className="h-4 w-4" /> រួចរាល់
         </button>
-        <p className="tg-hint text-xs flex-1 text-right">
-          {save.isPending ? "កំពុងរក្សាទុក..." : "រក្សាទុកដោយស្វ័យប្រវត្តិ"}
-        </p>
+        <div className="flex-1" />
+        <div
+          className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full transition-all ${
+            save.isPending
+              ? "bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]"
+              : justSynced
+              ? "bg-green-500/15 text-green-500"
+              : "tg-hint opacity-70"
+          }`}
+        >
+          {save.isPending ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>កំពុង Sync ទៅ Telegram…</span>
+            </>
+          ) : justSynced ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>បាន Sync ✓</span>
+            </>
+          ) : (
+            <>
+              <Send className="h-3.5 w-3.5" />
+              <span>Auto-sync</span>
+            </>
+          )}
+        </div>
       </div>
+
+      {(save.isPending || justSynced) && (
+        <div
+          className={`rounded-xl px-3 py-2 text-xs flex items-center gap-2 border ${
+            save.isPending
+              ? "bg-[var(--tg-btn)]/10 border-[var(--tg-btn)]/30 text-[var(--tg-btn)]"
+              : "bg-green-500/10 border-green-500/30 text-green-500"
+          }`}
+        >
+          {save.isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>កំពុងអាប់ដេត layout ថ្មីទៅ Telegram keyboard…</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>Layout ថ្មីបានអាប់ដេតទៅ Telegram keyboard រួចរាល់</span>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="tg-card p-3 flex items-center gap-2">
         <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">

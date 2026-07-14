@@ -29,6 +29,9 @@ import {
   Shield,
   UserPlus,
   GripVertical,
+  Loader2,
+  CheckCircle2,
+  Send,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -418,10 +421,19 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
   const dragState = useRef<{ kw: string; offsetX: number; offsetY: number } | null>(null);
   const [ghost, setGhost] = useState<{ kw: string; x: number; y: number; w: number } | null>(null);
 
+  const [justSynced, setJustSynced] = useState(false);
+  const syncedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const save = useMutation({
     mutationFn: (rows: string[][]) => callApi("reorder_replies_grid", { rows }),
-    onSuccess: () => { hapticNotify("success"); qc.invalidateQueries({ queryKey: ["replies"] }); },
-    onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
+    onSuccess: () => {
+      hapticNotify("success");
+      qc.invalidateQueries({ queryKey: ["replies"] });
+      setJustSynced(true);
+      if (syncedTimer.current) clearTimeout(syncedTimer.current);
+      syncedTimer.current = setTimeout(() => setJustSynced(false), 2200);
+      toast.success("✅ បាន Sync ទៅ Telegram keyboard");
+    },
+    onError: (e: Error) => { hapticNotify("error"); toast.error("❌ Sync បរាជ័យ: " + e.message); },
   });
 
   const commit = (next: string[][]) => {
@@ -548,10 +560,56 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         >
           <ChevronLeft className="h-4 w-4" /> រួចរាល់
         </button>
-        <p className="tg-hint text-xs flex-1 text-right">
-          {save.isPending ? "កំពុងរក្សាទុក..." : "រក្សាទុកដោយស្វ័យប្រវត្តិ"}
-        </p>
+        <div className="flex-1" />
+        <div
+          className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full transition-all ${
+            save.isPending
+              ? "bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]"
+              : justSynced
+              ? "bg-green-500/15 text-green-500"
+              : "tg-hint opacity-70"
+          }`}
+        >
+          {save.isPending ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>កំពុង Sync ទៅ Telegram…</span>
+            </>
+          ) : justSynced ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>បាន Sync ✓</span>
+            </>
+          ) : (
+            <>
+              <Send className="h-3.5 w-3.5" />
+              <span>Auto-sync</span>
+            </>
+          )}
+        </div>
       </div>
+
+      {(save.isPending || justSynced) && (
+        <div
+          className={`rounded-xl px-3 py-2 text-xs flex items-center gap-2 border ${
+            save.isPending
+              ? "bg-[var(--tg-btn)]/10 border-[var(--tg-btn)]/30 text-[var(--tg-btn)]"
+              : "bg-green-500/10 border-green-500/30 text-green-500"
+          }`}
+        >
+          {save.isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>កំពុងអាប់ដេត layout ថ្មីទៅ Telegram keyboard…</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>Layout ថ្មីបានអាប់ដេតទៅ Telegram keyboard រួចរាល់</span>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="tg-card p-3 flex items-center gap-2">
         <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
@@ -659,7 +717,7 @@ function DeleteBtn({ keyword }: { keyword: string }) {
   const qc = useQueryClient();
   const m = useMutation({
     mutationFn: () => callApi("delete_reply", { keyword }),
-    onSuccess: () => { hapticNotify("success"); toast.success("លុបរួចរាល់"); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
+    onSuccess: () => { hapticNotify("success"); toast.success("✅ លុបរួច — Telegram keyboard បាន Sync"); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
     onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
   return (
@@ -709,7 +767,7 @@ function ReplyEditor({ initial, onClose, onSaved }: { initial: Reply | null; onC
       }
       return callApi("upsert_reply", { keyword: kw, content, delete_after_seconds });
     },
-    onSuccess: () => { hapticNotify("success"); toast.success("រក្សាទុករួចរាល់"); onSaved(); },
+    onSuccess: () => { hapticNotify("success"); toast.success("✅ រក្សាទុករួច — Telegram keyboard បាន Sync"); onSaved(); },
     onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
 

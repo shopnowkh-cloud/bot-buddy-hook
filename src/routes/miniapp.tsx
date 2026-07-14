@@ -436,7 +436,15 @@ function KeywordsPanel() {
             <button onClick={() => setEditing(r)} className="min-w-0 flex-1 text-left active:opacity-70">
               <p className="font-semibold truncate">{r.keyword}</p>
               <p className="tg-hint text-xs flex items-center gap-1 mt-0.5">
-                <Clock className="h-3 w-3" /> {fmtDelay(r.delete_after_seconds)} · {Array.isArray(r.content) ? r.content.length : 1} សារ
+                <Clock className="h-3 w-3" /> {fmtDelay(r.delete_after_seconds)} · {(() => {
+                  const items = Array.isArray(r.content) ? r.content : [];
+                  const blocks = groupContent(items);
+                  const albums = blocks.filter((b) => b.kind === "album").length;
+                  const singles = blocks.filter((b) => b.kind === "single").length;
+                  if (albums > 0 && singles > 0) return `${albums} album · ${singles} សារ`;
+                  if (albums > 0) return `${albums} album (${items.length} media)`;
+                  return `${items.length} សារ`;
+                })()}
               </p>
             </button>
             <button

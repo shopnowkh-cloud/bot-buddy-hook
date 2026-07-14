@@ -545,11 +545,11 @@ function KeywordsPanel() {
 const MAX_PER_ROW = 4;
 
 const REORDER_COLORS = {
-  bg: "#17212b",
-  surface: "#232e3c",
-  elevated: "#2b3747",
-  text: "#f8fafc",
-  hint: "#9fb1c1",
+  bg: "#f4f6f8",
+  surface: "#ffffff",
+  elevated: "#eef2f6",
+  text: "#0f172a",
+  hint: "#64748b",
   button: "#2ea6ff",
   buttonText: "#ffffff",
 };

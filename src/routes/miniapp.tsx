@@ -299,8 +299,9 @@ function MiniApp() {
 
   if (!ready) {
     return (
-      <div className="tg-app min-h-screen grid place-items-center">
-        <p className="tg-hint">កំពុងផ្ទុក...</p>
+      <div className="min-h-screen grid place-items-center" style={{ background: "var(--tg-theme-bg-color, #17212b)", color: "var(--tg-theme-text-color, #ffffff)" }}>
+        <style>{tgStyles}</style>
+        <p style={{ color: "var(--tg-theme-hint-color, #7d8e9a)" }}>កំពុងផ្ទុក...</p>
       </div>
     );
   }
@@ -1225,16 +1226,21 @@ const tgStyles = `
 .tg-anim-page { animation: tgFadeIn .32s cubic-bezier(.2,.7,.2,1) both; }
 .tg-anim-header { animation: tgSlideDown .45s cubic-bezier(.2,.7,.2,1) both; }
 .tg-anim-nav { animation: tgSlideUp .5s cubic-bezier(.2,.7,.2,1) both; }
-.tg-stagger > * { animation: tgSlideUp .38s cubic-bezier(.2,.7,.2,1) both; opacity: 0; }
-.tg-stagger > *:nth-child(1) { animation-delay: .04s; }
-.tg-stagger > *:nth-child(2) { animation-delay: .09s; }
-.tg-stagger > *:nth-child(3) { animation-delay: .14s; }
-.tg-stagger > *:nth-child(4) { animation-delay: .19s; }
-.tg-stagger > *:nth-child(5) { animation-delay: .24s; }
-.tg-stagger > *:nth-child(6) { animation-delay: .29s; }
-.tg-stagger > *:nth-child(7) { animation-delay: .34s; }
-.tg-stagger > *:nth-child(8) { animation-delay: .39s; }
-.tg-stagger > *:nth-child(n+9) { animation-delay: .44s; }
+/* Default visible; animation is a progressive enhancement only.
+   Old Telegram WebViews may skip the keyframes — never leave content at opacity:0. */
+.tg-stagger > * { animation: tgSlideUp .38s cubic-bezier(.2,.7,.2,1) both; }
+.tg-stagger > *:nth-child(1) { animation-delay: .02s; }
+.tg-stagger > *:nth-child(2) { animation-delay: .05s; }
+.tg-stagger > *:nth-child(3) { animation-delay: .08s; }
+.tg-stagger > *:nth-child(4) { animation-delay: .11s; }
+.tg-stagger > *:nth-child(5) { animation-delay: .14s; }
+.tg-stagger > *:nth-child(6) { animation-delay: .17s; }
+.tg-stagger > *:nth-child(7) { animation-delay: .20s; }
+.tg-stagger > *:nth-child(8) { animation-delay: .23s; }
+.tg-stagger > *:nth-child(n+9) { animation-delay: .26s; }
+@supports not (animation-fill-mode: both) {
+  .tg-stagger > *, .tg-anim-page, .tg-anim-header, .tg-anim-nav { animation: none !important; opacity: 1 !important; }
+}
 
 .tg-press { transition: transform .12s ease, background .18s ease, color .18s ease; }
 .tg-press:active { transform: scale(.94); }

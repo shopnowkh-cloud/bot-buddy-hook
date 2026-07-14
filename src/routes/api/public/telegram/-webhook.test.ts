@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("@/lib/admin-config.server", () => ({
+  isAdminUserId: vi.fn(async (id: number | undefined | null) => Number(id) === 1),
+}));
+
 import {
   MAIN_KEYBOARD,
   buildKeywordKeyboard,
@@ -169,6 +174,48 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
 
     const sendMsg = calls.find((c) => c.method === "sendMessage");
     expect(sendMsg?.body.reply_markup?.is_persistent).toBe(true);
+  });
+});
+
+describe("handleUserMessage — group keyboard persistence", () => {
+  beforeEach(() => {
+    clearReplyCache();
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the full keyword keyboard on every unmatched group message", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group", title: "Test Group" },
+      from: { id: 10 },
+      message_id: 1,
+      text: "first unmatched",
+    });
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group", title: "Test Group" },
+      from: { id: 10 },
+      message_id: 2,
+      text: "second unmatched",
+    });
+
+    const keyboardSends = calls.filter((c) => c.method === "sendMessage" && c.body.chat_id === -100);
+    expect(keyboardSends.length).toBe(2);
+    expect(keyboardSends[0].body.reply_markup).toEqual({
+      keyboard: [["hi"]],
+      resize_keyboard: true,
+      is_persistent: true,
+    });
+    expect(keyboardSends[1].body.reply_markup).toEqual({
+      keyboard: [["hi"]],
+      resize_keyboard: true,
+      is_persistent: true,
+    });
+    expect(keyboardSends[0].body.reply_markup.selective).toBeUndefined();
+    expect(keyboardSends[1].body.reply_markup.selective).toBeUndefined();
   });
 });
 

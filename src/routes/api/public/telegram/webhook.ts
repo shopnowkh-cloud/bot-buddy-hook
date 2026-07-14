@@ -1239,8 +1239,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
                 if (inline.method) {
                   // Attach persistent keyword keyboard so it stays forever in the group
-                  const keys = Array.from(cache.replies.keys());
-                  const kb = buildKeywordKeyboard(keys);
+                  const kb = buildKeywordKeyboard(cache.rowsOrder);
+
                   if (kb) inline.reply_markup = kb;
                   // We can't get the sent message_id from an inline response,
                   // so auto-delete for inline sends is best-effort skipped.

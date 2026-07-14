@@ -127,6 +127,85 @@ function itemTypeIcon(type: ContentItem["type"]) {
   }
 }
 
+/**
+ * Renders content items as a preview, grouping album items (same media_group_id)
+ * into a SINGLE gallery block — mirroring how Telegram displays albums in the bot.
+ */
+function MediaPreview({ items }: { items: ContentItem[] }) {
+  const blocks = groupContent(items);
+  if (blocks.length === 0) return null;
+  return (
+    <div className="tg-card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Images className="h-4 w-4 tg-hint" />
+        <Label className="tg-hint text-xs">ការមើលជាមុន (ដូចក្នុង Telegram)</Label>
+      </div>
+      <div className="space-y-2">
+        {blocks.map((b, bi) => {
+          if (b.kind === "album") {
+            const cols = b.items.length >= 4 ? 3 : b.items.length >= 2 ? 2 : 1;
+            return (
+              <div
+                key={`a-${bi}`}
+                className="rounded-2xl overflow-hidden border border-[var(--tg-btn)]/30 bg-[var(--tg-section-2)]"
+              >
+                <div className="flex items-center justify-between px-3 py-2 bg-[var(--tg-btn)]/10">
+                  <span className="text-xs font-semibold flex items-center gap-1.5">
+                    <Images className="h-3.5 w-3.5" /> Album
+                  </span>
+                  <span className="tg-hint text-xs">{b.items.length} media</span>
+                </div>
+                <div
+                  className="grid gap-0.5 p-0.5"
+                  style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+                >
+                  {b.items.map((it, ii) => (
+                    <div
+                      key={ii}
+                      className="aspect-square bg-[var(--tg-bg)]/60 grid place-items-center text-[var(--tg-btn)]"
+                    >
+                      {itemTypeIcon(it.type === "copy" ? "photo" : it.type)}
+                    </div>
+                  ))}
+                </div>
+                {b.items.some((it) => it.caption) && (
+                  <p className="px-3 py-2 text-sm border-t border-[var(--tg-btn)]/10 line-clamp-2">
+                    {b.items.find((it) => it.caption)?.caption}
+                  </p>
+                )}
+              </div>
+            );
+          }
+          const it = b.item;
+          if (it.type === "text") {
+            return (
+              <div
+                key={`s-${bi}`}
+                className="rounded-2xl bg-[var(--tg-section-2)] px-3 py-2 text-sm whitespace-pre-wrap"
+              >
+                {it.text || <span className="tg-hint">(ទទេ)</span>}
+              </div>
+            );
+          }
+          return (
+            <div
+              key={`s-${bi}`}
+              className="rounded-2xl bg-[var(--tg-section-2)] px-3 py-2 flex items-center gap-2 text-sm"
+            >
+              <span className="h-8 w-8 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center">
+                {itemTypeIcon(it.type)}
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {it.caption || <span className="tg-hint capitalize">{it.type}</span>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type PendingRow = {
   id: number;
   chat_id: number;

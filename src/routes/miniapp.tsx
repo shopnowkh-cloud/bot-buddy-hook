@@ -281,8 +281,8 @@ function MiniApp() {
       if (tg) {
         tg.ready();
         tg.expand();
-        try { tg.setHeaderColor("bg_color"); } catch {}
-        try { tg.setBackgroundColor("#17212b"); } catch {}
+        try { tg.setHeaderColor("#f4f6f8"); } catch {}
+        try { tg.setBackgroundColor("#f4f6f8"); } catch {}
       }
       if (!cancelled) setReady(true);
     }

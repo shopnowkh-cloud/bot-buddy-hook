@@ -41,10 +41,15 @@ function makeSupabase({
   states = new Map<number, any>(),
 } = {}) {
   function table(name: string) {
+    const orderChain: any = {
+      order: () => orderChain,
+      then: (resolve: any) =>
+        Promise.resolve({ data: name === "replies" ? replies : [] }).then(resolve),
+    };
     return {
       select() {
         return {
-          order: () => Promise.resolve({ data: name === "replies" ? replies : [] }),
+          order: () => orderChain,
           eq(_col: string, val: any) {
             return {
               maybeSingle: () => {

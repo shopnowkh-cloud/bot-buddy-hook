@@ -299,9 +299,9 @@ function MiniApp() {
 
   if (!ready) {
     return (
-      <div className="min-h-screen grid place-items-center" style={{ background: "var(--tg-theme-bg-color, #17212b)", color: "var(--tg-theme-text-color, #ffffff)" }}>
+      <div className="min-h-screen grid place-items-center" style={{ background: "#f4f6f8", color: "#0f172a" }}>
         <style>{tgStyles}</style>
-        <p style={{ color: "var(--tg-theme-hint-color, #7d8e9a)" }}>កំពុងផ្ទុក...</p>
+        <p style={{ color: "#64748b" }}>កំពុងផ្ទុក...</p>
       </div>
     );
   }

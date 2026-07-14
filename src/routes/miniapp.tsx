@@ -387,81 +387,157 @@ function KeywordsPanel() {
   );
 }
 
+const MAX_PER_ROW = 4;
+
 function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => void }) {
   const qc = useQueryClient();
-  const [order, setOrder] = useState<string[]>(replies.map((r) => r.keyword));
+
+  // Build initial 2D grid from replies
+  const buildGrid = (rs: Reply[]): string[][] => {
+    const map = new Map<number, Reply[]>();
+    rs.forEach((r) => {
+      const ri = r.row_index ?? 0;
+      if (!map.has(ri)) map.set(ri, []);
+      map.get(ri)!.push(r);
+    });
+    const rows = [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, items]) =>
+        items
+          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+          .map((r) => r.keyword),
+      );
+    return rows.length === 0 ? [] : rows;
+  };
+
+  const [grid, setGrid] = useState<string[][]>(() => buildGrid(replies));
   const [dragKw, setDragKw] = useState<string | null>(null);
-  const [overIdx, setOverIdx] = useState<number | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const itemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const dragState = useRef<{ kw: string; startY: number; offsetY: number } | null>(null);
-  const [ghost, setGhost] = useState<{ kw: string; y: number; h: number; w: number } | null>(null);
+  const [overTarget, setOverTarget] = useState<{ row: number; col: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const slotRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const dragState = useRef<{ kw: string; offsetX: number; offsetY: number } | null>(null);
+  const [ghost, setGhost] = useState<{ kw: string; x: number; y: number; w: number } | null>(null);
 
   const save = useMutation({
-    mutationFn: (keywords: string[]) => callApi("reorder_replies", { keywords }),
+    mutationFn: (rows: string[][]) => callApi("reorder_replies_grid", { rows }),
     onSuccess: () => { hapticNotify("success"); qc.invalidateQueries({ queryKey: ["replies"] }); },
     onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
 
-  const commit = (next: string[]) => {
-    setOrder(next);
-    save.mutate(next);
+  const commit = (next: string[][]) => {
+    const clean = next.map((r) => r.filter(Boolean)).filter((r) => r.length > 0);
+    setGrid(clean);
+    save.mutate(clean);
+  };
+
+  const removeFrom = (g: string[][], kw: string): string[][] => {
+    return g.map((row) => row.filter((k) => k !== kw));
+  };
+
+  const moveTo = (kw: string, targetRow: number, targetCol: number) => {
+    // targetRow can be grid.length (new row at end) or any index
+    let next: string[][] = grid.map((r) => r.slice());
+    // Find current
+    let curRow = -1, curCol = -1;
+    for (let i = 0; i < next.length; i++) {
+      const j = next[i].indexOf(kw);
+      if (j >= 0) { curRow = i; curCol = j; break; }
+    }
+    if (curRow < 0) return;
+
+    // Remove from current
+    next[curRow].splice(curCol, 1);
+
+    // Adjust target if inserting into same row after current position
+    let tRow = targetRow;
+    let tCol = targetCol;
+    if (tRow === curRow && tCol > curCol) tCol -= 1;
+
+    // Ensure target row exists
+    while (next.length <= tRow) next.push([]);
+
+    // Cap at MAX_PER_ROW: if row already full (excluding moved item), overflow to new row
+    if (next[tRow].length >= MAX_PER_ROW) {
+      // Insert a new row at tRow and place item there alone
+      next.splice(tRow, 0, [kw]);
+    } else {
+      const insertCol = Math.max(0, Math.min(tCol, next[tRow].length));
+      next[tRow].splice(insertCol, 0, kw);
+    }
+
+    // Drop empty rows
+    next = next.filter((r) => r.length > 0);
+    commit(next);
   };
 
   const onPointerDown = (e: React.PointerEvent, kw: string) => {
-    const el = itemRefs.current.get(kw);
-    if (!el) return;
+    const el = (e.currentTarget as HTMLElement).closest("[data-item]") as HTMLElement | null;
+    if (!el || !containerRef.current) return;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const rect = el.getBoundingClientRect();
-    const listRect = listRef.current?.getBoundingClientRect();
-    dragState.current = { kw, startY: e.clientY, offsetY: e.clientY - rect.top };
+    const cRect = containerRef.current.getBoundingClientRect();
+    dragState.current = { kw, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
     setDragKw(kw);
-    setGhost({ kw, y: rect.top - (listRect?.top ?? 0), h: rect.height, w: rect.width });
-    setOverIdx(order.indexOf(kw));
+    setGhost({
+      kw,
+      x: rect.left - cRect.left,
+      y: rect.top - cRect.top,
+      w: rect.width,
+    });
     hapticImpact("medium");
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragState.current || !listRef.current) return;
-    const listRect = listRef.current.getBoundingClientRect();
-    const rel = e.clientY - listRect.top - dragState.current.offsetY;
-    setGhost((g) => (g ? { ...g, y: rel } : g));
-    // find nearest slot
-    const centerY = e.clientY;
-    let best = 0;
+    if (!dragState.current || !containerRef.current) return;
+    const cRect = containerRef.current.getBoundingClientRect();
+    setGhost((g) =>
+      g
+        ? { ...g, x: e.clientX - cRect.left - dragState.current!.offsetX, y: e.clientY - cRect.top - dragState.current!.offsetY }
+        : g,
+    );
+
+    // Find nearest slot
+    let best: { row: number; col: number } | null = null;
     let bestDist = Infinity;
-    order.forEach((k, i) => {
-      const el = itemRefs.current.get(k);
+    slotRefs.current.forEach((el, key) => {
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const c = r.top + r.height / 2;
-      const d = Math.abs(centerY - c);
-      if (d < bestDist) { bestDist = d; best = i; }
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const d = Math.hypot(e.clientX - cx, e.clientY - cy);
+      if (d < bestDist) {
+        bestDist = d;
+        const [ri, ci] = key.split(":").map(Number);
+        best = { row: ri, col: ci };
+      }
     });
-    setOverIdx((prev) => {
-      if (prev !== best) hapticImpact("light");
-      return best;
-    });
+    if (best) {
+      setOverTarget((prev) => {
+        if (!prev || prev.row !== best!.row || prev.col !== best!.col) hapticImpact("light");
+        return best;
+      });
+    }
   };
 
   const onPointerUp = () => {
-    if (!dragState.current || overIdx === null) {
-      dragState.current = null;
-      setDragKw(null); setGhost(null); setOverIdx(null);
-      return;
-    }
-    const kw = dragState.current.kw;
-    const from = order.indexOf(kw);
-    const to = overIdx;
+    const st = dragState.current;
+    const target = overTarget;
     dragState.current = null;
-    setDragKw(null); setGhost(null); setOverIdx(null);
-    if (from === to || from < 0) return;
-    const next = order.slice();
-    const [k] = next.splice(from, 1);
-    next.splice(to, 0, k);
-    hapticNotify("success");
-    commit(next);
+    setDragKw(null);
+    setGhost(null);
+    setOverTarget(null);
+    if (!st || !target) return;
+    moveTo(st.kw, target.row, target.col);
   };
+
+  // Register a slot: between/around items in a row, plus one at the end + a "new row" row
+  const registerSlot = (row: number, col: number) => (el: HTMLDivElement | null) => {
+    const key = `${row}:${col}`;
+    if (el) slotRefs.current.set(key, el);
+    else slotRefs.current.delete(key);
+  };
+
+  const isDragging = dragKw !== null;
 
   return (
     <div className="pt-2 space-y-3">
@@ -482,13 +558,13 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
           <ArrowUpDown className="h-4 w-4" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold">អូសដាក់ទីតាំង</p>
-          <p className="tg-hint text-xs">ចុចសញ្ញា ⋮⋮ ខាងឆ្វេង ហើយអូសឡើង/ចុះ</p>
+          <p className="text-sm font-semibold">អូសដាក់ជា Grid</p>
+          <p className="tg-hint text-xs">មួយជួរបាន 1–{MAX_PER_ROW} ពាក្យ · អូសទៅជួរណាក៏បាន</p>
         </div>
       </div>
 
       <div
-        ref={listRef}
+        ref={containerRef}
         className="relative select-none"
         style={{ touchAction: "none" }}
         onPointerMove={onPointerMove}
@@ -496,51 +572,76 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         onPointerCancel={onPointerUp}
       >
         <div className="space-y-2">
-          {order.map((kw, i) => {
-            const isDragging = dragKw === kw;
-            const showSlotBefore = dragKw !== null && overIdx === i && order.indexOf(dragKw) !== i;
-            return (
-              <div key={kw}>
-                {showSlotBefore && (
-                  <div className="mb-2 h-14 rounded-2xl border-2 border-dashed border-[var(--tg-btn)] bg-[var(--tg-btn)]/10 grid place-items-center animate-pulse">
-                    <p className="text-[var(--tg-btn)] text-xs font-semibold">ដាក់នៅទីតាំង #{i + 1}</p>
-                  </div>
-                )}
-                <div
-                  ref={(el) => { itemRefs.current.set(kw, el); }}
-                  className={`tg-card p-3 flex items-center gap-3 transition-all ${isDragging ? "opacity-30 scale-95" : ""}`}
-                >
-                  <div
-                    onPointerDown={(e) => onPointerDown(e, kw)}
-                    className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95 cursor-grab active:cursor-grabbing"
-                    style={{ touchAction: "none" }}
-                    aria-label="Drag handle"
-                  >
-                    <GripVertical className="h-5 w-5 tg-hint" />
-                  </div>
-                  <div className="h-9 w-9 shrink-0 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold text-xs">
-                    {i + 1}
-                  </div>
-                  <p className="font-semibold truncate flex-1">{kw}</p>
-                </div>
+          {grid.map((row, ri) => (
+            <div
+              key={`row-${ri}`}
+              className="tg-card p-2 flex items-stretch gap-1.5 min-h-[56px]"
+            >
+              <div className="w-6 shrink-0 grid place-items-center tg-hint text-[10px] font-bold">
+                {ri + 1}
               </div>
-            );
-          })}
+              <div className="flex-1 flex flex-wrap items-stretch gap-1.5">
+                {row.map((kw, ci) => {
+                  const dragging = dragKw === kw;
+                  const showBefore =
+                    isDragging && overTarget?.row === ri && overTarget?.col === ci && dragKw !== kw;
+                  return (
+                    <React.Fragment key={kw}>
+                      <div
+                        ref={registerSlot(ri, ci)}
+                        className={`w-1 self-stretch rounded ${showBefore ? "bg-[var(--tg-btn)]" : ""}`}
+                      />
+                      <div
+                        data-item
+                        className={`flex-1 min-w-[80px] rounded-xl bg-[var(--tg-section-2)] px-2 py-2 flex items-center gap-1.5 transition-all ${dragging ? "opacity-30 scale-95" : ""}`}
+                      >
+                        <div
+                          onPointerDown={(e) => onPointerDown(e, kw)}
+                          className="h-8 w-6 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing"
+                          style={{ touchAction: "none" }}
+                          aria-label="Drag"
+                        >
+                          <GripVertical className="h-4 w-4 tg-hint" />
+                        </div>
+                        <p className="text-xs font-semibold truncate flex-1">{kw}</p>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+                {/* trailing slot */}
+                <div
+                  ref={registerSlot(ri, row.length)}
+                  className={`w-1 self-stretch rounded ${
+                    isDragging && overTarget?.row === ri && overTarget?.col === row.length
+                      ? "bg-[var(--tg-btn)]"
+                      : ""
+                  }`}
+                />
+              </div>
+            </div>
+          ))}
+
+          {/* new-row drop zone */}
+          <div
+            ref={registerSlot(grid.length, 0)}
+            className={`h-12 rounded-2xl border-2 border-dashed grid place-items-center text-xs transition-all ${
+              isDragging && overTarget?.row === grid.length
+                ? "border-[var(--tg-btn)] bg-[var(--tg-btn)]/10 text-[var(--tg-btn)] font-semibold"
+                : "border-[var(--tg-hint)]/30 tg-hint"
+            }`}
+          >
+            ＋ ជួរថ្មី
+          </div>
         </div>
 
         {ghost && (
           <div
-            className="pointer-events-none absolute left-0 z-50"
-            style={{ top: ghost.y, width: ghost.w }}
+            className="pointer-events-none absolute z-50"
+            style={{ left: ghost.x, top: ghost.y, width: ghost.w }}
           >
-            <div className="tg-card p-3 flex items-center gap-3 shadow-2xl shadow-black/40 ring-2 ring-[var(--tg-btn)] bg-[var(--tg-section)] scale-[1.02]">
-              <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)] grid place-items-center">
-                <GripVertical className="h-5 w-5 text-white" />
-              </div>
-              <div className="h-9 w-9 shrink-0 rounded-lg bg-[var(--tg-btn)]/25 text-[var(--tg-btn)] grid place-items-center font-bold text-xs">
-                {overIdx !== null ? overIdx + 1 : ""}
-              </div>
-              <p className="font-semibold truncate flex-1">{ghost.kw}</p>
+            <div className="rounded-xl bg-[var(--tg-section)] ring-2 ring-[var(--tg-btn)] shadow-2xl shadow-black/40 px-2 py-2 flex items-center gap-1.5 scale-[1.03]">
+              <GripVertical className="h-4 w-4 text-[var(--tg-btn)]" />
+              <p className="text-xs font-semibold truncate">{ghost.kw}</p>
             </div>
           </div>
         )}
@@ -548,6 +649,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
     </div>
   );
 }
+
 
 
 

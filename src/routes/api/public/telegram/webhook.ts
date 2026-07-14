@@ -35,7 +35,7 @@ function getAdminClient() {
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry>; rowsOrder: string[][] };
-const REPLY_CACHE_TTL_MS = 5 * 60_000; // 5 min hot cache
+const REPLY_CACHE_TTL_MS = 8_000; // 8s: keep hot cache but stay fresh across serverless isolates
 const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;

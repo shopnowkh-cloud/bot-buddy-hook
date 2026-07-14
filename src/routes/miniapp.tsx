@@ -58,10 +58,14 @@ export const Route = createFileRoute("/miniapp")({
 });
 
 type ContentItem = {
-  type: "text" | "photo" | "video" | "audio" | "voice" | "document" | "animation" | "sticker";
+  type: "text" | "photo" | "video" | "audio" | "voice" | "document" | "animation" | "sticker" | "copy";
   text?: string;
   file_id?: string;
   caption?: string;
+  media_group_id?: string;
+  from_chat_id?: number;
+  message_id?: number;
+  forward?: boolean;
 };
 type Reply = {
   keyword: string;
@@ -71,6 +75,57 @@ type Reply = {
   position?: number;
   row_index?: number;
 };
+
+type ContentBlock =
+  | { kind: "album"; items: ContentItem[]; startIndex: number }
+  | { kind: "single"; item: ContentItem; index: number };
+
+/**
+ * Groups content items by media_group_id so an album (multiple photos/videos
+ * sent together in Telegram) is treated as a single block — mirroring what
+ * the bot sends via copyMessages.
+ */
+function groupContent(items: ContentItem[]): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  const albumByKey = new Map<string, ContentBlock & { kind: "album" }>();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const gid = it?.media_group_id;
+    if (gid && it.type === "copy" && !it.forward) {
+      const key = `${it.from_chat_id ?? "?"}::${gid}`;
+      const existing = albumByKey.get(key);
+      if (existing && existing.items.length < 10) {
+        existing.items.push(it);
+        continue;
+      }
+      const g: ContentBlock & { kind: "album" } = { kind: "album", items: [it], startIndex: i };
+      albumByKey.set(key, g);
+      blocks.push(g);
+    } else {
+      blocks.push({ kind: "single", item: it, index: i });
+    }
+  }
+  // Sort album items by message_id so the preview matches the bot's send order.
+  for (const b of blocks) {
+    if (b.kind === "album") {
+      b.items.sort((a, c) => (a.message_id ?? 0) - (c.message_id ?? 0));
+    }
+  }
+  return blocks;
+}
+
+function itemTypeIcon(type: ContentItem["type"]) {
+  switch (type) {
+    case "photo": return <ImageIcon className="h-5 w-5" />;
+    case "video": return <Video className="h-5 w-5" />;
+    case "animation": return <Film className="h-5 w-5" />;
+    case "audio": return <Music className="h-5 w-5" />;
+    case "voice": return <Mic className="h-5 w-5" />;
+    case "document": return <FileText className="h-5 w-5" />;
+    case "sticker": return <Sticker className="h-5 w-5" />;
+    default: return <ImageIcon className="h-5 w-5" />;
+  }
+}
 
 type PendingRow = {
   id: number;

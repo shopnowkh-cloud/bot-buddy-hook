@@ -531,7 +531,8 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
   // Private chat (non-admin): show keyword keyboard on every interaction so
   // it always reappears even after the user clears chat history.
   const keys = await listKeywords(supabase);
-  const kb = buildKeywordKeyboard(keys);
+  const kb = buildKeywordKeyboard(await listKeywordRows(supabase));
+
 
   if (isStart) {
     if (keys.length === 0) {

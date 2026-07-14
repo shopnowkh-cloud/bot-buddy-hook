@@ -866,11 +866,13 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
                       >
                         <div
                           onPointerDown={(e) => onPointerDown(e, kw)}
+                          onTouchStart={(e) => onTouchStart(e, kw)}
+                          onContextMenu={(e) => e.preventDefault()}
                           className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/10 text-[var(--tg-btn)] grid place-items-center cursor-grab active:cursor-grabbing active:bg-[var(--tg-btn)]/25"
-                          style={{ touchAction: "none" }}
+                          style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                           aria-label="Drag"
                         >
-                          <GripVertical className="h-5 w-5" />
+                          <GripVertical className="h-5 w-5 pointer-events-none" />
                         </div>
                         <p className="text-sm font-semibold truncate flex-1">{kw}</p>
                       </div>

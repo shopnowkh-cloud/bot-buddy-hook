@@ -169,13 +169,39 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             case "reorder_replies": {
               const now = new Date().toISOString();
               const updates = req.keywords.map((keyword, i) =>
-                s.from("replies").update({ position: (i + 1) * 10, updated_at: now }).eq("keyword", keyword),
+                s.from("replies").update({ row_index: i + 1, position: (i + 1) * 10, updated_at: now }).eq("keyword", keyword),
               );
               const results = await Promise.all(updates);
               const firstErr = results.find((r) => r.error);
               if (firstErr?.error) return jerr(500, firstErr.error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
               return Response.json({ ok: true });
             }
+            case "reorder_replies_grid": {
+              const now = new Date().toISOString();
+              const updates: Promise<any>[] = [];
+              req.rows.forEach((row, rIdx) => {
+                row.forEach((keyword, cIdx) => {
+                  updates.push(
+                    s.from("replies")
+                      .update({ row_index: rIdx + 1, position: (cIdx + 1) * 10, updated_at: now })
+                      .eq("keyword", keyword),
+                  );
+                });
+              });
+              const results = await Promise.all(updates);
+              const firstErr = results.find((r) => r.error);
+              if (firstErr?.error) return jerr(500, firstErr.error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
+              return Response.json({ ok: true });
+            }
+
             case "list_admins": {
               const { getAdminConfig } = await import("@/lib/admin-config.server");
               const cfg = await getAdminConfig(true);

@@ -101,11 +101,13 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             case "list_replies": {
               const { data, error } = await s
                 .from("replies")
-                .select("keyword, content, delete_after_seconds, updated_at, position")
+                .select("keyword, content, delete_after_seconds, updated_at, position, row_index")
+                .order("row_index", { ascending: true })
                 .order("position", { ascending: true })
                 .order("created_at", { ascending: true });
               if (error) return jerr(500, error.message);
               return Response.json({ replies: data ?? [] });
+
             }
             case "list_pending": {
               const { data, error } = await s

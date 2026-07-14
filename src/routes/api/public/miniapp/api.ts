@@ -182,7 +182,7 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             }
             case "reorder_replies_grid": {
               const now = new Date().toISOString();
-              const updates: Promise<any>[] = [];
+              const updates: any[] = [];
               req.rows.forEach((row, rIdx) => {
                 row.forEach((keyword, cIdx) => {
                   updates.push(
@@ -192,6 +192,7 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
                   );
                 });
               });
+
               const results = await Promise.all(updates);
               const firstErr = results.find((r) => r.error);
               if (firstErr?.error) return jerr(500, firstErr.error.message);

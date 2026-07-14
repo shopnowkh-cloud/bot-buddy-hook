@@ -47,6 +47,11 @@ const RequestSchema = z.discriminatedUnion("action", [
     action: z.literal("reorder_replies"),
     keywords: z.array(z.string().min(1).max(255)).min(1).max(500),
   }),
+  z.object({
+    action: z.literal("reorder_replies_grid"),
+    rows: z.array(z.array(z.string().min(1).max(255)).min(1).max(8)).min(1).max(200),
+  }),
+
   z.object({ action: z.literal("list_admins") }),
   z.object({ action: z.literal("add_admin_id"), admin_id: z.number().int().positive() }),
   z.object({ action: z.literal("remove_admin_id"), admin_id: z.number().int().positive() }),

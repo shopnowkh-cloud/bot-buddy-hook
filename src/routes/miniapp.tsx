@@ -880,6 +880,10 @@ function ReplyEditor({ initial, onClose, onSaved }: { initial: Reply | null; onC
         </div>
       </div>
 
+      {initial && Array.isArray(initial.content) && initial.content.length > 0 && (
+        <MediaPreview items={initial.content} />
+      )}
+
       <div className="tg-card p-4 space-y-3">
         <Label className="tg-hint text-xs">Timer លុបសារ (វិនាទី)</Label>
         <Input

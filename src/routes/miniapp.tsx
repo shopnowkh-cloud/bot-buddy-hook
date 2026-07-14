@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -551,9 +552,10 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
 
   const isDragging = dragKw !== null;
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-[var(--tg-bg)] flex flex-col">
+  const content = (
+    <div className="fixed inset-0 z-[9999] flex flex-col w-screen h-screen" style={{ height: "100dvh", backgroundColor: "var(--tg-bg, #17212b)" }}>
       <div className="flex-1 overflow-y-auto px-3 pt-2 pb-6 space-y-3">
+
       <div className="flex items-center gap-2">
         <button
           onClick={onClose}
@@ -712,7 +714,9 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
+
 
 
 

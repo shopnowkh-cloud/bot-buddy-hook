@@ -50,7 +50,7 @@ export const Route = createFileRoute("/miniapp")({
     meta: [
       { title: "Bot Admin Dashboard" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#17212b" },
+      { name: "theme-color", content: "#f4f6f8" },
     ],
     scripts: [{ src: "https://telegram.org/js/telegram-web-app.js" }],
   }),

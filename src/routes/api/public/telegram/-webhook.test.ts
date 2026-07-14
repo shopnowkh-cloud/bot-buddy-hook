@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("@/lib/admin-config.server", () => ({
+  isAdminUserId: vi.fn(async (id: number | undefined | null) => Number(id) === 1),
+}));
+
 import {
   MAIN_KEYBOARD,
   buildKeywordKeyboard,

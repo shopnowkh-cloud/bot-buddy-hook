@@ -50,7 +50,7 @@ export const Route = createFileRoute("/miniapp")({
     meta: [
       { title: "Bot Admin Dashboard" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#17212b" },
+      { name: "theme-color", content: "#f4f6f8" },
     ],
     scripts: [{ src: "https://telegram.org/js/telegram-web-app.js" }],
   }),
@@ -281,8 +281,8 @@ function MiniApp() {
       if (tg) {
         tg.ready();
         tg.expand();
-        try { tg.setHeaderColor("bg_color"); } catch {}
-        try { tg.setBackgroundColor("#17212b"); } catch {}
+        try { tg.setHeaderColor("#f4f6f8"); } catch {}
+        try { tg.setBackgroundColor("#f4f6f8"); } catch {}
       }
       if (!cancelled) setReady(true);
     }
@@ -299,9 +299,9 @@ function MiniApp() {
 
   if (!ready) {
     return (
-      <div className="min-h-screen grid place-items-center" style={{ background: "var(--tg-theme-bg-color, #17212b)", color: "var(--tg-theme-text-color, #ffffff)" }}>
+      <div className="min-h-screen grid place-items-center" style={{ background: "#f4f6f8", color: "#0f172a" }}>
         <style>{tgStyles}</style>
-        <p style={{ color: "var(--tg-theme-hint-color, #7d8e9a)" }}>កំពុងផ្ទុក...</p>
+        <p style={{ color: "#64748b" }}>កំពុងផ្ទុក...</p>
       </div>
     );
   }
@@ -1238,13 +1238,13 @@ function PendingPanel() {
 
 const tgStyles = `
 .tg-app {
-  --tg-bg: var(--tg-theme-bg-color, #17212b);
-  --tg-section: var(--tg-theme-secondary-bg-color, #232e3c);
-  --tg-section-2: rgba(255,255,255,0.06);
-  --tg-text: var(--tg-theme-text-color, #ffffff);
-  --tg-hint: var(--tg-theme-hint-color, #7d8e9a);
-  --tg-btn: var(--tg-theme-button-color, #2ea6ff);
-  --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
+  --tg-bg: #f4f6f8;
+  --tg-section: #ffffff;
+  --tg-section-2: #eef2f6;
+  --tg-text: #0f172a;
+  --tg-hint: #64748b;
+  --tg-btn: #2ea6ff;
+  --tg-btn-text: #ffffff;
   background: var(--tg-bg);
   color: var(--tg-text);
   font-family: "Kantumruy Pro", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
@@ -1252,13 +1252,14 @@ const tgStyles = `
 .tg-card {
   background: var(--tg-section);
   border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
   transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
 }
 .tg-card:active { transform: scale(.985); }
 .tg-hint { color: var(--tg-hint); }
 .tg-input {
   background: var(--tg-section-2) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
+  border: 1px solid rgba(15,23,42,0.08) !important;
   color: var(--tg-text) !important;
   border-radius: 12px !important;
   transition: border-color .2s ease, box-shadow .2s ease;

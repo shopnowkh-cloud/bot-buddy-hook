@@ -325,12 +325,17 @@ async function getEffectiveDeleteSeconds(supabase: any, match: any) {
   return loadConfig(supabase);
 }
 
-export function buildKeywordKeyboard(keys: string[]) {
-  if (keys.length === 0) return undefined;
-  const rows: string[][] = [];
-  for (const k of keys) rows.push([k]);
-  return { keyboard: rows, resize_keyboard: true, is_persistent: true };
+export function buildKeywordKeyboard(rows: string[][]) {
+  const clean = rows.map((r) => r.filter(Boolean)).filter((r) => r.length > 0);
+  if (clean.length === 0) return undefined;
+  return { keyboard: clean, resize_keyboard: true, is_persistent: true };
 }
+
+async function listKeywordRows(supabase: any): Promise<string[][]> {
+  const cache = await loadReplyCache(supabase);
+  return cache.rowsOrder;
+}
+
 
 async function deleteAndSendMatch(
   token: string,

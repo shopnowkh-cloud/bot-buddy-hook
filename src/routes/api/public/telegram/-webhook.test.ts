@@ -78,14 +78,15 @@ describe("buildKeywordKeyboard", () => {
     expect(buildKeywordKeyboard([])).toBeUndefined();
   });
 
-  it("groups keys into rows of two and is persistent", () => {
-    const kb = buildKeywordKeyboard(["a", "b", "c"]);
+  it("passes rows straight through and marks persistent", () => {
+    const kb = buildKeywordKeyboard([["a", "b"], ["c"]]);
     expect(kb).toEqual({
       keyboard: [["a", "b"], ["c"]],
       resize_keyboard: true,
       is_persistent: true,
     });
   });
+
 });
 
 describe("MAIN_KEYBOARD", () => {

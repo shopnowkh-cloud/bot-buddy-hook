@@ -763,7 +763,16 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
   const isDragging = dragKw !== null;
 
   const content = (
-    <div className="tg-app fixed inset-0 z-[9999] flex flex-col w-screen h-screen" style={{ height: "100dvh", backgroundColor: "var(--tg-theme-bg-color, #17212b)", color: "var(--tg-theme-text-color, #ffffff)" }}>
+    <div
+      className="tg-app fixed inset-0 z-[9999] flex flex-col w-screen h-screen"
+      style={{
+        height: "100dvh",
+        minHeight: "100vh",
+        backgroundColor: "var(--tg-bg, var(--tg-theme-bg-color, #17212b))",
+        color: "var(--tg-text, var(--tg-theme-text-color, #ffffff))",
+        WebkitTransform: "translateZ(0)",
+      }}
+    >
 
       <div className="flex-1 overflow-y-auto px-3 pt-2 pb-6 space-y-3">
 

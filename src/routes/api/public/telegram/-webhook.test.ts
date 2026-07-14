@@ -41,10 +41,11 @@ function makeSupabase({
   states = new Map<number, any>(),
 } = {}) {
   function table(name: string) {
+    const result = Promise.resolve({ data: name === "replies" ? replies : [] });
     const orderChain: any = {
       order: () => orderChain,
-      then: (resolve: any) =>
-        Promise.resolve({ data: name === "replies" ? replies : [] }).then(resolve),
+      then: (r: any, e: any) => result.then(r, e),
+      catch: (e: any) => result.catch(e),
     };
     return {
       select() {

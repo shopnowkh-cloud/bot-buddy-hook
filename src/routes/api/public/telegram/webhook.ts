@@ -40,6 +40,11 @@ const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 const groupTrackCache = new Map<number, number>();
+// Per-user cache so each group member receives the ReplyKeyboard at least once.
+// Telegram ReplyKeyboards in groups are per-user: a member only sees the
+// keyboard after the bot sends them a message that carries reply_markup.
+const groupUserKbCache = new Map<string, number>();
+const GROUP_USER_KB_TTL_MS = 6 * 60 * 60_000; // re-show every 6h in case Telegram drops it
 
 export function clearReplyCache() {
   replyCache = null;
@@ -606,8 +611,29 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
       if (match) {
         // Re-attach keyboard so it persists forever in the group
         await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, groupKb);
+        if (msg.from?.id) {
+          groupUserKbCache.set(`${chatId}:${msg.from.id}`, Date.now());
+        }
+        return;
       }
-      // No match → stay silent (only the keyboard is visible)
+    }
+
+    // No match (or non-text): ensure THIS user has received the keyboard at
+    // least once recently. Telegram ReplyKeyboards in groups are per-user, so
+    // members who never triggered a keyword won't see it otherwise.
+    const userId = msg.from?.id;
+    if (userId && groupKb) {
+      const key = `${chatId}:${userId}`;
+      const last = groupUserKbCache.get(key) ?? 0;
+      if (Date.now() - last > GROUP_USER_KB_TTL_MS) {
+        groupUserKbCache.set(key, Date.now());
+        await tgRequest(token, "sendMessage", {
+          chat_id: chatId,
+          text: "⌨️",
+          reply_markup: { ...groupKb, selective: true },
+          reply_to_message_id: msg.message_id,
+        }).catch(() => {});
+      }
     }
     return;
   }

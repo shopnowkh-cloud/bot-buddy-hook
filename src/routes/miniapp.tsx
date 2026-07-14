@@ -717,7 +717,7 @@ function DeleteBtn({ keyword }: { keyword: string }) {
   const qc = useQueryClient();
   const m = useMutation({
     mutationFn: () => callApi("delete_reply", { keyword }),
-    onSuccess: () => { hapticNotify("success"); toast.success("លុបរួចរាល់"); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
+    onSuccess: () => { hapticNotify("success"); toast.success("✅ លុបរួច — Telegram keyboard បាន Sync"); qc.invalidateQueries({ queryKey: ["replies"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
     onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
   return (

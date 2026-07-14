@@ -164,9 +164,16 @@ const KEYWORD_TIMER_KEYBOARD = {
   resize_keyboard: true,
 };
 
-function buildListKeyboard(keys: string[]) {
+function buildListKeyboard(keysOrRows: string[] | string[][]) {
   const rows: string[][] = [];
-  for (const k of keys) rows.push([k]);
+  if (Array.isArray(keysOrRows[0])) {
+    for (const r of keysOrRows as string[][]) {
+      const clean = r.filter(Boolean);
+      if (clean.length > 0) rows.push(clean);
+    }
+  } else {
+    for (const k of keysOrRows as string[]) rows.push([k]);
+  }
   rows.push(["❌ បោះបង់"]);
   return { keyboard: rows, resize_keyboard: true };
 }

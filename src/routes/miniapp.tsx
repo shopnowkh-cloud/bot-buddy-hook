@@ -33,6 +33,14 @@ import {
   Loader2,
   CheckCircle2,
   Send,
+  Images,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  Music,
+  FileText,
+  Sticker,
+  Film,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";

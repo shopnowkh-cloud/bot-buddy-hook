@@ -138,31 +138,10 @@ const REPLY_COLLECT_KEYBOARD = {
 };
 
 const ACTION_KEYBOARD = {
-  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer", "↕️ ទីតាំង"], ["❌ បោះបង់"]],
+  keyboard: [["👁 មើល", "✏️ កែ", "🗑 លុប"], ["⏱ Timer"], ["❌ បោះបង់"]],
   resize_keyboard: true,
 };
 
-const POSITION_KEYBOARD = {
-  keyboard: [["🔼 ឡើងលើ", "🔽 ចុះក្រោម"], ["◀️ ទៅដើម", "▶️ ទៅចុង"], ["❌ បោះបង់"]],
-  resize_keyboard: true,
-};
-
-// Combined keyboard: keyword rows (current order) + position controls at bottom.
-// Sending this in ONE message makes Telegram refresh the reply keyboard
-// immediately so admin sees the new order right away while still being able
-// to press 🔼/🔽/◀️/▶️ to continue moving.
-function buildPositionKeyboard(keys: string[]) {
-  const kwRows: string[][] = keys.map((k) => [k]);
-  return {
-    keyboard: [
-      ...kwRows,
-      ["🔼 ឡើងលើ", "🔽 ចុះក្រោម"],
-      ["◀️ ទៅដើម", "▶️ ទៅចុង"],
-      ["❌ បោះបង់"],
-    ],
-    resize_keyboard: true,
-  };
-}
 
 const TIMER_KEYBOARD = {
   keyboard: [

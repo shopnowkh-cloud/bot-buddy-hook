@@ -552,9 +552,10 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
 
   const isDragging = dragKw !== null;
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-[var(--tg-bg)] flex flex-col">
+  const content = (
+    <div className="fixed inset-0 z-[60] bg-[var(--tg-bg)] flex flex-col w-screen h-screen" style={{ height: "100dvh" }}>
       <div className="flex-1 overflow-y-auto px-3 pt-2 pb-6 space-y-3">
+
       <div className="flex items-center gap-2">
         <button
           onClick={onClose}

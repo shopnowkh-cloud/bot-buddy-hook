@@ -659,10 +659,11 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
       }
     });
     if (best) {
+      const b: { row: number; col: number } = best;
       const prev = overTargetRef.current;
-      if (!prev || prev.row !== best.row || prev.col !== best.col) {
-        overTargetRef.current = best;
-        setOverTarget(best);
+      if (!prev || prev.row !== b.row || prev.col !== b.col) {
+        overTargetRef.current = b;
+        setOverTarget(b);
         hapticImpact("light");
       }
     }

@@ -47,6 +47,11 @@ const RequestSchema = z.discriminatedUnion("action", [
     action: z.literal("reorder_replies"),
     keywords: z.array(z.string().min(1).max(255)).min(1).max(500),
   }),
+  z.object({
+    action: z.literal("reorder_replies_grid"),
+    rows: z.array(z.array(z.string().min(1).max(255)).min(1).max(8)).min(1).max(200),
+  }),
+
   z.object({ action: z.literal("list_admins") }),
   z.object({ action: z.literal("add_admin_id"), admin_id: z.number().int().positive() }),
   z.object({ action: z.literal("remove_admin_id"), admin_id: z.number().int().positive() }),
@@ -96,11 +101,13 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             case "list_replies": {
               const { data, error } = await s
                 .from("replies")
-                .select("keyword, content, delete_after_seconds, updated_at, position")
+                .select("keyword, content, delete_after_seconds, updated_at, position, row_index")
+                .order("row_index", { ascending: true })
                 .order("position", { ascending: true })
                 .order("created_at", { ascending: true });
               if (error) return jerr(500, error.message);
               return Response.json({ replies: data ?? [] });
+
             }
             case "list_pending": {
               const { data, error } = await s
@@ -162,13 +169,40 @@ export const Route = createFileRoute("/api/public/miniapp/api")({
             case "reorder_replies": {
               const now = new Date().toISOString();
               const updates = req.keywords.map((keyword, i) =>
-                s.from("replies").update({ position: (i + 1) * 10, updated_at: now }).eq("keyword", keyword),
+                s.from("replies").update({ row_index: i + 1, position: (i + 1) * 10, updated_at: now }).eq("keyword", keyword),
               );
               const results = await Promise.all(updates);
               const firstErr = results.find((r) => r.error);
               if (firstErr?.error) return jerr(500, firstErr.error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
               return Response.json({ ok: true });
             }
+            case "reorder_replies_grid": {
+              const now = new Date().toISOString();
+              const updates: any[] = [];
+              req.rows.forEach((row, rIdx) => {
+                row.forEach((keyword, cIdx) => {
+                  updates.push(
+                    s.from("replies")
+                      .update({ row_index: rIdx + 1, position: (cIdx + 1) * 10, updated_at: now })
+                      .eq("keyword", keyword),
+                  );
+                });
+              });
+
+              const results = await Promise.all(updates);
+              const firstErr = results.find((r) => r.error);
+              if (firstErr?.error) return jerr(500, firstErr.error.message);
+              try {
+                const { clearReplyCache } = await import("@/routes/api/public/telegram/webhook");
+                clearReplyCache();
+              } catch {}
+              return Response.json({ ok: true });
+            }
+
             case "list_admins": {
               const { getAdminConfig } = await import("@/lib/admin-config.server");
               const cfg = await getAdminConfig(true);

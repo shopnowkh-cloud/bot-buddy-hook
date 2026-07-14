@@ -34,7 +34,7 @@ function getAdminClient() {
 }
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
-type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry> };
+type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry>; rowsOrder: string[][] };
 const REPLY_CACHE_TTL_MS = 5 * 60_000; // 5 min hot cache
 const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
@@ -49,20 +49,26 @@ export function clearReplyCache() {
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
-    supabase.from("replies").select("keyword, content, delete_after_seconds, position").order("position").order("created_at"),
+    supabase.from("replies").select("keyword, content, delete_after_seconds, position, row_index").order("row_index").order("position").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
+    const rowsMap = new Map<number, string[]>();
     for (const row of replyResult.data ?? []) {
       replies.set(String(row.keyword).toLowerCase(), {
         content: row.content,
         delete_after_seconds: row.delete_after_seconds as number | null,
       });
+      const ri = Number(row.row_index ?? 0);
+      if (!rowsMap.has(ri)) rowsMap.set(ri, []);
+      rowsMap.get(ri)!.push(String(row.keyword));
     }
+    const rowsOrder = [...rowsMap.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
     replyCache = {
       expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
       config: configResult.data?.delete_after_seconds ?? 0,
       replies,
+      rowsOrder,
     };
     replyCachePromise = null;
     return replyCache;
@@ -72,6 +78,7 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   });
   return replyCachePromise;
 }
+
 
 async function loadReplyCache(supabase: any): Promise<ReplyCache> {
   const now = Date.now();
@@ -318,12 +325,17 @@ async function getEffectiveDeleteSeconds(supabase: any, match: any) {
   return loadConfig(supabase);
 }
 
-export function buildKeywordKeyboard(keys: string[]) {
-  if (keys.length === 0) return undefined;
-  const rows: string[][] = [];
-  for (const k of keys) rows.push([k]);
-  return { keyboard: rows, resize_keyboard: true, is_persistent: true };
+export function buildKeywordKeyboard(rows: string[][]) {
+  const clean = rows.map((r) => r.filter(Boolean)).filter((r) => r.length > 0);
+  if (clean.length === 0) return undefined;
+  return { keyboard: clean, resize_keyboard: true, is_persistent: true };
 }
+
+async function listKeywordRows(supabase: any): Promise<string[][]> {
+  const cache = await loadReplyCache(supabase);
+  return cache.rowsOrder;
+}
+
 
 async function deleteAndSendMatch(
   token: string,
@@ -484,8 +496,9 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
     }
 
     // Build persistent keyword keyboard (shown to all group members, stays forever)
-    const groupKeys = await listKeywords(supabase);
-    const groupKb = buildKeywordKeyboard(groupKeys);
+    const groupRows = await listKeywordRows(supabase);
+    const groupKb = buildKeywordKeyboard(groupRows);
+
 
     // When bot is added to the group → show the keyboard once
     const botAdded = Array.isArray(msg.new_chat_members) &&
@@ -518,7 +531,8 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
   // Private chat (non-admin): show keyword keyboard on every interaction so
   // it always reappears even after the user clears chat history.
   const keys = await listKeywords(supabase);
-  const kb = buildKeywordKeyboard(keys);
+  const kb = buildKeywordKeyboard(await listKeywordRows(supabase));
+
 
   if (isStart) {
     if (keys.length === 0) {
@@ -1225,8 +1239,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
                 if (inline.method) {
                   // Attach persistent keyword keyboard so it stays forever in the group
-                  const keys = Array.from(cache.replies.keys());
-                  const kb = buildKeywordKeyboard(keys);
+                  const kb = buildKeywordKeyboard(cache.rowsOrder);
+
                   if (kb) inline.reply_markup = kb;
                   // We can't get the sent message_id from an inline response,
                   // so auto-delete for inline sends is best-effort skipped.

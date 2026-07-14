@@ -496,8 +496,9 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
     }
 
     // Build persistent keyword keyboard (shown to all group members, stays forever)
-    const groupKeys = await listKeywords(supabase);
-    const groupKb = buildKeywordKeyboard(groupKeys);
+    const groupRows = await listKeywordRows(supabase);
+    const groupKb = buildKeywordKeyboard(groupRows);
+
 
     // When bot is added to the group → show the keyboard once
     const botAdded = Array.isArray(msg.new_chat_members) &&

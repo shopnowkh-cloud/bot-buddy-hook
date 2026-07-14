@@ -633,32 +633,16 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
     commit(next);
   };
 
-  const onPointerDown = (e: React.PointerEvent, kw: string) => {
-    const el = (e.currentTarget as HTMLElement).closest("[data-item]") as HTMLElement | null;
-    if (!el || !containerRef.current) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    const rect = el.getBoundingClientRect();
-    const cRect = containerRef.current.getBoundingClientRect();
-    dragState.current = { kw, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
-    setDragKw(kw);
-    setGhost({
-      kw,
-      x: rect.left - cRect.left,
-      y: rect.top - cRect.top,
-      w: rect.width,
-    });
-    hapticImpact("medium");
-  };
+  const overTargetRef = useRef<{ row: number; col: number } | null>(null);
 
-  const onPointerMove = (e: React.PointerEvent) => {
+  const updateFromPoint = (clientX: number, clientY: number) => {
     if (!dragState.current || !containerRef.current) return;
     const cRect = containerRef.current.getBoundingClientRect();
     setGhost((g) =>
       g
-        ? { ...g, x: e.clientX - cRect.left - dragState.current!.offsetX, y: e.clientY - cRect.top - dragState.current!.offsetY }
+        ? { ...g, x: clientX - cRect.left - dragState.current!.offsetX, y: clientY - cRect.top - dragState.current!.offsetY }
         : g,
     );
-
     // Find nearest slot
     let best: { row: number; col: number } | null = null;
     let bestDist = Infinity;
@@ -667,7 +651,7 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
       const r = el.getBoundingClientRect();
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
-      const d = Math.hypot(e.clientX - cx, e.clientY - cy);
+      const d = Math.hypot(clientX - cx, clientY - cy);
       if (d < bestDist) {
         bestDist = d;
         const [ri, ci] = key.split(":").map(Number);
@@ -675,23 +659,97 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
       }
     });
     if (best) {
-      setOverTarget((prev) => {
-        if (!prev || prev.row !== best!.row || prev.col !== best!.col) hapticImpact("light");
-        return best;
-      });
+      const prev = overTargetRef.current;
+      if (!prev || prev.row !== best.row || prev.col !== best.col) {
+        overTargetRef.current = best;
+        setOverTarget(best);
+        hapticImpact("light");
+      }
     }
   };
 
-  const onPointerUp = () => {
+  const endDrag = (commitMove: boolean) => {
     const st = dragState.current;
-    const target = overTarget;
+    const target = overTargetRef.current;
     dragState.current = null;
+    overTargetRef.current = null;
     setDragKw(null);
     setGhost(null);
     setOverTarget(null);
-    if (!st || !target) return;
-    moveTo(st.kw, target.row, target.col);
+    // Detach window listeners
+    window.removeEventListener("pointermove", winMove);
+    window.removeEventListener("pointerup", winUp);
+    window.removeEventListener("pointercancel", winCancel);
+    window.removeEventListener("touchmove", winTouchMove);
+    window.removeEventListener("touchend", winTouchEnd);
+    window.removeEventListener("touchcancel", winTouchEnd);
+    if (commitMove && st && target) moveTo(st.kw, target.row, target.col);
   };
+
+  function winMove(e: PointerEvent) {
+    if (!dragState.current) return;
+    e.preventDefault();
+    updateFromPoint(e.clientX, e.clientY);
+  }
+  function winUp() { endDrag(true); }
+  function winCancel() { endDrag(false); }
+  function winTouchMove(e: TouchEvent) {
+    if (!dragState.current || e.touches.length === 0) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    updateFromPoint(t.clientX, t.clientY);
+  }
+  function winTouchEnd() { endDrag(true); }
+
+  const beginDrag = (clientX: number, clientY: number, kw: string, itemEl: HTMLElement) => {
+    if (!containerRef.current) return;
+    const rect = itemEl.getBoundingClientRect();
+    const cRect = containerRef.current.getBoundingClientRect();
+    dragState.current = { kw, offsetX: clientX - rect.left, offsetY: clientY - rect.top };
+    setDragKw(kw);
+    setGhost({
+      kw,
+      x: rect.left - cRect.left,
+      y: rect.top - cRect.top,
+      w: rect.width,
+    });
+    hapticImpact("medium");
+    // Attach window listeners (works regardless of pointer capture / SVG target quirks on iOS Telegram WebView)
+    window.addEventListener("pointermove", winMove, { passive: false });
+    window.addEventListener("pointerup", winUp);
+    window.addEventListener("pointercancel", winCancel);
+    window.addEventListener("touchmove", winTouchMove, { passive: false });
+    window.addEventListener("touchend", winTouchEnd);
+    window.addEventListener("touchcancel", winTouchEnd);
+  };
+
+  const onPointerDown = (e: React.PointerEvent, kw: string) => {
+    const el = (e.currentTarget as HTMLElement).closest("[data-item]") as HTMLElement | null;
+    if (!el) return;
+    e.preventDefault();
+    beginDrag(e.clientX, e.clientY, kw, el);
+  };
+
+  const onTouchStart = (e: React.TouchEvent, kw: string) => {
+    if (dragState.current) return; // pointerdown may have fired
+    const el = (e.currentTarget as HTMLElement).closest("[data-item]") as HTMLElement | null;
+    if (!el || e.touches.length === 0) return;
+    const t = e.touches[0];
+    beginDrag(t.clientX, t.clientY, kw, el);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      window.removeEventListener("pointermove", winMove);
+      window.removeEventListener("pointerup", winUp);
+      window.removeEventListener("pointercancel", winCancel);
+      window.removeEventListener("touchmove", winTouchMove);
+      window.removeEventListener("touchend", winTouchEnd);
+      window.removeEventListener("touchcancel", winTouchEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Register a slot: between/around items in a row, plus one at the end + a "new row" row
   const registerSlot = (row: number, col: number) => (el: HTMLDivElement | null) => {

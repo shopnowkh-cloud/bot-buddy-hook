@@ -41,10 +41,16 @@ function makeSupabase({
   states = new Map<number, any>(),
 } = {}) {
   function table(name: string) {
+    const result = Promise.resolve({ data: name === "replies" ? replies : [] });
+    const orderChain: any = {
+      order: () => orderChain,
+      then: (r: any, e: any) => result.then(r, e),
+      catch: (e: any) => result.catch(e),
+    };
     return {
       select() {
         return {
-          order: () => Promise.resolve({ data: name === "replies" ? replies : [] }),
+          order: () => orderChain,
           eq(_col: string, val: any) {
             return {
               maybeSingle: () => {
@@ -207,5 +213,92 @@ describe("handleMessage — admin keyboard persistence", () => {
     );
     expect(sendWithKb).toBeDefined();
     expect(sendWithKb!.body.reply_markup).toEqual(MAIN_KEYBOARD);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Album webhook flow — media_group_id grouped into a single copyMessages call
+// ---------------------------------------------------------------------------
+
+describe("webhook album flow — media_group_id grouping", () => {
+  beforeEach(() => {
+    clearReplyCache();
+    vi.unstubAllGlobals();
+  });
+
+  it("groups an album stored in pending_replies into ONE copyMessages call, sorted by message_id", async () => {
+    const calls = installFetchSpy();
+    // Album items intentionally stored out-of-order (52, 50, 51) to prove sorting.
+    const albumContent = [
+      { type: "copy", from_chat_id: 100, message_id: 52, forward: false, media_group_id: "ALBUM_A" },
+      { type: "copy", from_chat_id: 100, message_id: 50, forward: false, media_group_id: "ALBUM_A" },
+      { type: "copy", from_chat_id: 100, message_id: 51, forward: false, media_group_id: "ALBUM_A" },
+    ];
+    const supabase = makeSupabase({
+      replies: [{ keyword: "album", content: albumContent, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: 555, type: "group" },
+      message_id: 1,
+      text: "album",
+    });
+
+    const copyMessagesCalls = calls.filter((c) => c.method === "copyMessages");
+    const copyMessageCalls = calls.filter((c) => c.method === "copyMessage");
+
+    expect(copyMessagesCalls.length).toBe(1);
+    expect(copyMessageCalls.length).toBe(0); // no per-item fallback
+    expect(copyMessagesCalls[0].body).toMatchObject({
+      chat_id: 555,
+      from_chat_id: 100,
+      message_ids: [50, 51, 52],
+      remove_caption: false,
+    });
+  });
+
+  it("keeps two different media_group_ids as two separate copyMessages calls", async () => {
+    const calls = installFetchSpy();
+    const content = [
+      { type: "copy", from_chat_id: 100, message_id: 10, forward: false, media_group_id: "A" },
+      { type: "copy", from_chat_id: 100, message_id: 11, forward: false, media_group_id: "A" },
+      { type: "copy", from_chat_id: 100, message_id: 20, forward: false, media_group_id: "B" },
+      { type: "copy", from_chat_id: 100, message_id: 21, forward: false, media_group_id: "B" },
+    ];
+    const supabase = makeSupabase({
+      replies: [{ keyword: "two", content, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: 777, type: "group" },
+      message_id: 2,
+      text: "two",
+    });
+
+    const copyMessagesCalls = calls.filter((c) => c.method === "copyMessages");
+    expect(copyMessagesCalls.length).toBe(2);
+    expect(copyMessagesCalls[0].body.message_ids).toEqual([10, 11]);
+    expect(copyMessagesCalls[1].body.message_ids).toEqual([20, 21]);
+    // No album item was flattened into single copyMessage.
+    expect(calls.filter((c) => c.method === "copyMessage").length).toBe(0);
+  });
+
+  it("degenerates to single copyMessage when album has only one item", async () => {
+    const calls = installFetchSpy();
+    const content = [
+      { type: "copy", from_chat_id: 100, message_id: 30, forward: false, media_group_id: "SOLO" },
+    ];
+    const supabase = makeSupabase({
+      replies: [{ keyword: "solo", content, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: 888, type: "group" },
+      message_id: 3,
+      text: "solo",
+    });
+
+    expect(calls.filter((c) => c.method === "copyMessages").length).toBe(0);
+    expect(calls.filter((c) => c.method === "copyMessage").length).toBe(1);
   });
 });

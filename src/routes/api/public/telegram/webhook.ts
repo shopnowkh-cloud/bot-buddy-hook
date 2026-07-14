@@ -34,7 +34,7 @@ function getAdminClient() {
 }
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
-type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry> };
+type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry>; rowsOrder: string[][] };
 const REPLY_CACHE_TTL_MS = 5 * 60_000; // 5 min hot cache
 const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
@@ -49,20 +49,26 @@ export function clearReplyCache() {
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
-    supabase.from("replies").select("keyword, content, delete_after_seconds, position").order("position").order("created_at"),
+    supabase.from("replies").select("keyword, content, delete_after_seconds, position, row_index").order("row_index").order("position").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
+    const rowsMap = new Map<number, string[]>();
     for (const row of replyResult.data ?? []) {
       replies.set(String(row.keyword).toLowerCase(), {
         content: row.content,
         delete_after_seconds: row.delete_after_seconds as number | null,
       });
+      const ri = Number(row.row_index ?? 0);
+      if (!rowsMap.has(ri)) rowsMap.set(ri, []);
+      rowsMap.get(ri)!.push(String(row.keyword));
     }
+    const rowsOrder = [...rowsMap.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
     replyCache = {
       expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
       config: configResult.data?.delete_after_seconds ?? 0,
       replies,
+      rowsOrder,
     };
     replyCachePromise = null;
     return replyCache;
@@ -72,6 +78,7 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   });
   return replyCachePromise;
 }
+
 
 async function loadReplyCache(supabase: any): Promise<ReplyCache> {
   const now = Date.now();

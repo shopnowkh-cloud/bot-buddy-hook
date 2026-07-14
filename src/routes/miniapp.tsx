@@ -714,7 +714,9 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
+
 
 
 

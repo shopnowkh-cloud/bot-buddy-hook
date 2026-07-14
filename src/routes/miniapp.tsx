@@ -709,8 +709,10 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
           </div>
         )}
       </div>
+      </div>
     </div>
   );
+}
 }
 
 

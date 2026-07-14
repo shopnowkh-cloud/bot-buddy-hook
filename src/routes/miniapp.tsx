@@ -767,7 +767,7 @@ function ReplyEditor({ initial, onClose, onSaved }: { initial: Reply | null; onC
       }
       return callApi("upsert_reply", { keyword: kw, content, delete_after_seconds });
     },
-    onSuccess: () => { hapticNotify("success"); toast.success("រក្សាទុករួចរាល់"); onSaved(); },
+    onSuccess: () => { hapticNotify("success"); toast.success("✅ រក្សាទុករួច — Telegram keyboard បាន Sync"); onSaved(); },
     onError: (e: Error) => { hapticNotify("error"); toast.error(e.message); },
   });
 

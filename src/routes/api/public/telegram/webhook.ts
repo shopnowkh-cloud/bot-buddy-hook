@@ -312,10 +312,12 @@ async function sendReply(
 }
 
 async function insertPendingDeletions(supabase: any, rows: any[]) {
-  if (rows.length > 0) {
-    // Fire-and-forget: don't block webhook response on this bookkeeping insert
-    supabase.from("pending_deletions").insert(rows).then(() => {}, (e: any) => console.error("pending_deletions insert failed", e));
-  }
+  if (rows.length === 0) return;
+  // MUST await: on serverless (Cloudflare Workers), fire-and-forget promises
+  // are terminated once the HTTP response is returned, so the insert
+  // would silently never happen and auto-delete would never fire.
+  const { error } = await supabase.from("pending_deletions").insert(rows);
+  if (error) console.error("pending_deletions insert failed", error);
 }
 
 async function getEffectiveDeleteSeconds(supabase: any, match: any) {

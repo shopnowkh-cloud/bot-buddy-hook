@@ -40,6 +40,11 @@ const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 const groupTrackCache = new Map<number, number>();
+// Per-user cache so each group member receives the ReplyKeyboard at least once.
+// Telegram ReplyKeyboards in groups are per-user: a member only sees the
+// keyboard after the bot sends them a message that carries reply_markup.
+const groupUserKbCache = new Map<string, number>();
+const GROUP_USER_KB_TTL_MS = 6 * 60 * 60_000; // re-show every 6h in case Telegram drops it
 
 export function clearReplyCache() {
   replyCache = null;

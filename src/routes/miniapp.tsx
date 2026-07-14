@@ -836,9 +836,6 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         ref={containerRef}
         className="relative select-none"
         style={{ touchAction: "none" }}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
       >
         <div className="space-y-3">
           {grid.map((row, ri) => (

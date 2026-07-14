@@ -57,7 +57,9 @@ type Reply = {
   delete_after_seconds: number | null;
   updated_at: string;
   position?: number;
+  row_index?: number;
 };
+
 type PendingRow = {
   id: number;
   chat_id: number;

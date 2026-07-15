@@ -1145,6 +1145,8 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     if (text === "🗑 លុប") {
       await supabase.from("replies").delete().eq("keyword", kw);
       clearReplyCache();
+      resetCommandsSyncSignature();
+      syncBotCommands(token, supabase).catch(() => {});
       const keys = await listKeywords(supabase);
       if (keys.length === 0) {
         await saveState(supabase, chatId, null, null, null);

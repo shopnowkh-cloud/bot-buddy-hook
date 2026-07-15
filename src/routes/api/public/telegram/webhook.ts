@@ -72,10 +72,6 @@ export function slugifyKeyword(keyword: string): string {
 function buildCommandMaps(keywords: string[]) {
   const cmdToKw = new Map<string, string>();
   const kwToCmd = new Map<string, string>();
-  for (const kw of keywords) {
-function buildCommandMaps(keywords: string[]) {
-  const cmdToKw = new Map<string, string>();
-  const kwToCmd = new Map<string, string>();
   // Number commands sequentially: /1, /2, /3, ... in keyword order.
   keywords.forEach((kw, i) => {
     const cmd = String(i + 1);

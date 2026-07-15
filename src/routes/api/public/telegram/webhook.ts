@@ -603,11 +603,30 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
       const { isAdminUserId } = await import("@/lib/admin-config.server");
       const allowed = botAdded || (await isAdminUserId(msg.from?.id));
       if (allowed) {
-        await tgRequest(token, "sendMessage", {
+        // Send a tiny message carrying the persistent keyboard, then delete
+        // both it and the admin's "/start" command so the chat stays clean.
+        // Telegram clients keep the persistent keyboard visible for users
+        // who received it, even after the carrier message is deleted.
+        const res = await tgRequest(token, "sendMessage", {
           chat_id: chatId,
           text: "⌨️",
           reply_markup: groupKb,
         });
+        const carrierId = res?.result?.message_id;
+        await Promise.all([
+          isStartCmd
+            ? tgRequest(token, "deleteMessage", {
+                chat_id: chatId,
+                message_id: msg.message_id,
+              }).catch(() => {})
+            : Promise.resolve(),
+          carrierId
+            ? tgRequest(token, "deleteMessage", {
+                chat_id: chatId,
+                message_id: carrierId,
+              }).catch(() => {})
+            : Promise.resolve(),
+        ]);
       }
       if (isStartCmd) return;
     }

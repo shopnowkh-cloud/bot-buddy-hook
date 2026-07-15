@@ -1289,7 +1289,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             const { supabaseAdmin } = await getAdminClient();
             const cache = replyCache; // sync peek; only take fast path when cache is hot
             if (cache) {
-              const match = cache.replies.get(msg.text.trim().toLowerCase());
+              const parsedCmd = parseSlashCommand(msg.text);
+              const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
+              const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;
               if (match && !Array.isArray(match.content)) {
                 const chatId = msg.chat.id;
                 const effective = match.delete_after_seconds ?? cache.config;

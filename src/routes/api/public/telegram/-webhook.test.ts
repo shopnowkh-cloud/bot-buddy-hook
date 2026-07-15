@@ -186,7 +186,7 @@ describe("syncBotCommands", () => {
     resetCommandsSyncSignature();
     clearReplyCache();
     await syncBotCommands("TOKEN", supabase);
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(2);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(6);
   });
 
   it("no-ops when token is empty", async () => {

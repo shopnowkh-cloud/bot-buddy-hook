@@ -34,8 +34,17 @@ function getAdminClient() {
 }
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
-type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry>; rowsOrder: string[][] };
-const REPLY_CACHE_TTL_MS = 8_000; // 8s: keep hot cache but stay fresh across serverless isolates
+type ReplyCache = {
+  expiresAt: number;
+  config: number;
+  replies: Map<string, ReplyCacheEntry>;
+  rowsOrder: string[][];
+  /** slash-command (without leading '/') → keyword */
+  commands: Map<string, string>;
+  /** keyword.toLowerCase() → slash-command (without leading '/') */
+  keywordToCommand: Map<string, string>;
+};
+const REPLY_CACHE_TTL_MS = 8_000;
 const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
@@ -46,6 +55,38 @@ export function clearReplyCache() {
   replyCachePromise = null;
 }
 
+// Telegram commands must match [a-z0-9_]{1,32}.
+export function slugifyKeyword(keyword: string): string {
+  let s = String(keyword).toLowerCase().normalize("NFKD");
+  s = s.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!s) {
+    let h = 0;
+    for (const ch of keyword) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    s = `cmd_${h.toString(36)}`;
+  }
+  if (s.length > 32) s = s.slice(0, 32).replace(/_+$/, "");
+  if (!s) s = "cmd";
+  return s;
+}
+
+function buildCommandMaps(keywords: string[]) {
+  const cmdToKw = new Map<string, string>();
+  const kwToCmd = new Map<string, string>();
+  for (const kw of keywords) {
+    const base = slugifyKeyword(kw);
+    let cmd = base;
+    let n = 2;
+    while (cmdToKw.has(cmd)) {
+      const suffix = `_${n}`;
+      cmd = (base.length + suffix.length > 32 ? base.slice(0, 32 - suffix.length) : base) + suffix;
+      n++;
+    }
+    cmdToKw.set(cmd, kw);
+    kwToCmd.set(kw.toLowerCase(), cmd);
+  }
+  return { cmdToKw, kwToCmd };
+}
+
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
@@ -54,21 +95,27 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
     const rowsMap = new Map<number, string[]>();
+    const orderedKeywords: string[] = [];
     for (const row of replyResult.data ?? []) {
-      replies.set(String(row.keyword).toLowerCase(), {
+      const kw = String(row.keyword);
+      replies.set(kw.toLowerCase(), {
         content: row.content,
         delete_after_seconds: row.delete_after_seconds as number | null,
       });
       const ri = Number(row.row_index ?? 0);
       if (!rowsMap.has(ri)) rowsMap.set(ri, []);
-      rowsMap.get(ri)!.push(String(row.keyword));
+      rowsMap.get(ri)!.push(kw);
+      orderedKeywords.push(kw);
     }
     const rowsOrder = [...rowsMap.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+    const { cmdToKw, kwToCmd } = buildCommandMaps(orderedKeywords);
     replyCache = {
       expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
       config: configResult.data?.delete_after_seconds ?? 0,
       replies,
       rowsOrder,
+      commands: cmdToKw,
+      keywordToCommand: kwToCmd,
     };
     replyCachePromise = null;
     return replyCache;
@@ -83,13 +130,40 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
 async function loadReplyCache(supabase: any): Promise<ReplyCache> {
   const now = Date.now();
   if (replyCache) {
-    // Stale-while-revalidate: serve stale immediately, refresh in background
     if (replyCache.expiresAt <= now && !replyCachePromise) {
       fetchReplyCache(supabase).catch(() => {});
     }
     return replyCache;
   }
   return fetchReplyCache(supabase);
+}
+
+// -------------------- setMyCommands sync --------------------
+let lastCommandsSyncSig = "";
+export async function syncBotCommands(token: string, supabase: any): Promise<void> {
+  if (!token) return;
+  const cache = await loadReplyCache(supabase);
+  const commands = [...cache.commands.entries()].map(([command, keyword]) => ({
+    command,
+    description: keyword.slice(0, 256),
+  }));
+  const sig = JSON.stringify(commands);
+  if (sig === lastCommandsSyncSig) return;
+  lastCommandsSyncSig = sig;
+  try {
+    const res = await tgRequest(token, "setMyCommands", { commands });
+    if (!res?.ok) {
+      console.error("setMyCommands failed", res?.description);
+      lastCommandsSyncSig = "";
+    }
+  } catch (err) {
+    console.error("setMyCommands error", err);
+    lastCommandsSyncSig = "";
+  }
+}
+
+export function resetCommandsSyncSignature() {
+  lastCommandsSyncSig = "";
 }
 
 

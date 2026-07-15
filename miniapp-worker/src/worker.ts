@@ -13,6 +13,77 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname === "/api/health") {
+      const checks: Record<string, unknown> = {
+        worker: "ok",
+        has_BOT_SYNC_URL: !!env.BOT_SYNC_URL,
+        has_BOT_SYNC_SECRET: !!env.BOT_SYNC_SECRET,
+        bot_sync_url: env.BOT_SYNC_URL ?? null,
+        secret_length: env.BOT_SYNC_SECRET?.length ?? 0,
+      };
+
+      if (!env.BOT_SYNC_URL || !env.BOT_SYNC_SECRET) {
+        return json({ status: "misconfigured", reason: "Missing BOT_SYNC_URL or BOT_SYNC_SECRET on the Worker", ...checks }, 500);
+      }
+
+      try {
+        const started = Date.now();
+        const upstream = await fetch(env.BOT_SYNC_URL, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-bridge-secret": env.BOT_SYNC_SECRET,
+          },
+          body: JSON.stringify({ action: "me" }),
+        });
+        const latency_ms = Date.now() - started;
+        const text = await upstream.text();
+        let upstreamBody: unknown = text;
+        try { upstreamBody = JSON.parse(text); } catch {}
+
+        if (upstream.status === 200) {
+          return json({ status: "ok", message: "Bridge reachable and secret matches ✅", latency_ms, upstream_status: 200, ...checks });
+        }
+        if (upstream.status === 401) {
+          return json({
+            status: "secret_mismatch",
+            message: "Bridge returned 401 — BOT_SYNC_SECRET on the Worker does NOT match Lovable ❌",
+            latency_ms,
+            upstream_status: 401,
+            upstream_body: upstreamBody,
+            ...checks,
+          }, 401);
+        }
+        if (upstream.status === 500) {
+          return json({
+            status: "bridge_misconfigured",
+            message: "Bridge reachable but Lovable side missing BOT_SYNC_SECRET",
+            latency_ms,
+            upstream_status: 500,
+            upstream_body: upstreamBody,
+            ...checks,
+          }, 502);
+        }
+        return json({
+          status: "unexpected",
+          message: `Bridge returned HTTP ${upstream.status}`,
+          latency_ms,
+          upstream_status: upstream.status,
+          upstream_body: upstreamBody,
+          ...checks,
+        }, 502);
+      } catch (e: any) {
+        return json({
+          status: "unreachable",
+          message: "Failed to reach bridge URL — check BOT_SYNC_URL is correct and public",
+          error: e?.message ?? String(e),
+          ...checks,
+        }, 502);
+      }
+    }
+
+
+
     if (url.pathname === "/api/miniapp") {
       if (request.method === "OPTIONS") {
         return new Response(null, {

@@ -5,11 +5,13 @@ vi.mock("@/lib/admin-config.server", () => ({
 }));
 
 import {
-  MAIN_KEYBOARD,
-  buildKeywordKeyboard,
   handleUserMessage,
   handleMessage,
   clearReplyCache,
+  slugifyKeyword,
+  parseSlashCommand,
+  syncBotCommands,
+  resetCommandsSyncSignature,
 } from "./webhook";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +27,7 @@ function installFetchSpy(): TgCall[] {
     vi.fn(async (url: string, init: any) => {
       const m = String(url).match(/\/bot[^/]+\/(\w+)$/);
       const method = m ? m[1] : "unknown";
-      const body = JSON.parse(init.body);
+      const body = init?.body ? JSON.parse(init.body) : {};
       calls.push({ method, body });
       return new Response(
         JSON.stringify({ ok: true, result: { message_id: 999 } }),
@@ -36,10 +38,6 @@ function installFetchSpy(): TgCall[] {
   return calls;
 }
 
-/**
- * Minimal in-memory Supabase mock — only the tables/columns the handlers touch.
- * Returns a Postgrest-like chain object.
- */
 function makeSupabase({
   replies = [] as Array<{ keyword: string; content: any; delete_after_seconds: number | null }>,
   config = 0 as number,
@@ -84,224 +82,227 @@ function makeSupabase({
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-describe("buildKeywordKeyboard", () => {
-  it("returns undefined when no keywords", () => {
-    expect(buildKeywordKeyboard([])).toBeUndefined();
+describe("slugifyKeyword", () => {
+  it("lower-cases and replaces non [a-z0-9_] with underscores", () => {
+    expect(slugifyKeyword("Hello World")).toBe("hello_world");
+    expect(slugifyKeyword("QR-Code")).toBe("qr_code");
   });
 
-  it("passes rows straight through and marks persistent", () => {
-    const kb = buildKeywordKeyboard([["a", "b"], ["c"]]);
-    expect(kb).toEqual({
-      keyboard: [["a", "b"], ["c"]],
-      resize_keyboard: true,
-      is_persistent: true,
-    });
+  it("generates a deterministic fallback slug for non-ASCII (Khmer) input", () => {
+    const a = slugifyKeyword("សួស្តី");
+    const b = slugifyKeyword("សួស្តី");
+    expect(a).toBe(b);
+    expect(a).toMatch(/^cmd_[a-z0-9]+$/);
+    expect(a.length).toBeLessThanOrEqual(32);
   });
 
+  it("truncates to Telegram's 32-char limit", () => {
+    expect(slugifyKeyword("a".repeat(100)).length).toBeLessThanOrEqual(32);
+  });
 });
 
-describe("MAIN_KEYBOARD", () => {
-  it("is marked persistent so it survives chat-history clears", () => {
-    expect(MAIN_KEYBOARD.is_persistent).toBe(true);
-    expect(MAIN_KEYBOARD.resize_keyboard).toBe(true);
+describe("parseSlashCommand", () => {
+  it("returns the command name without leading slash", () => {
+    expect(parseSlashCommand("/qr")).toBe("qr");
+  });
+  it("strips @botname suffix", () => {
+    expect(parseSlashCommand("/qr@my_bot foo")).toBe("qr");
+  });
+  it("returns null for non-command text", () => {
+    expect(parseSlashCommand("hello")).toBeNull();
+    expect(parseSlashCommand("")).toBeNull();
+    expect(parseSlashCommand(undefined)).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Behavioural tests — keyboard persistence
+// syncBotCommands — calls setMyCommands with slugified keywords
 // ---------------------------------------------------------------------------
 
-describe("handleUserMessage — private chat keyboard persistence", () => {
+describe("syncBotCommands", () => {
   beforeEach(() => {
     clearReplyCache();
+    resetCommandsSyncSignature();
     vi.unstubAllGlobals();
   });
 
-  it("re-attaches keyword keyboard on /start (simulating clear-history)", async () => {
+  it("registers all keywords as slash commands via setMyCommands", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
-      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+      replies: [
+        { keyword: "QR Code", content: { type: "text", content: "x" }, delete_after_seconds: null },
+        { keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null },
+      ],
     });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: 42, type: "private" },
-      message_id: 1,
-      text: "/start",
-    });
-
-    const sendMsg = calls.find((c) => c.method === "sendMessage");
-    expect(sendMsg).toBeDefined();
-    expect(sendMsg!.body.reply_markup).toEqual({
-      keyboard: [["hi"]],
-      resize_keyboard: true,
-      is_persistent: true,
-    });
+    await syncBotCommands("TOKEN", supabase);
+    const set = calls.find((c) => c.method === "setMyCommands");
+    expect(set).toBeDefined();
+    const cmds = set!.body.commands as Array<{ command: string; description: string }>;
+    expect(cmds).toEqual([
+      { command: "qr_code", description: "QR Code" },
+      { command: "hi", description: "hi" },
+    ]);
   });
 
-  it("re-attaches keyword keyboard when user taps a known keyword", async () => {
+  it("is idempotent — repeated calls with same keywords issue only one setMyCommands", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
-      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
     });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: 42, type: "private" },
-      message_id: 7,
-      text: "hi",
-    });
-
-    // The reply send (sendMessage / copyMessage / forwardMessage) must carry the keyboard.
-    const replySends = calls.filter((c) =>
-      ["sendMessage", "copyMessage", "forwardMessage"].includes(c.method) &&
-      c.body.chat_id === 42 &&
-      c.body.reply_markup,
-    );
-    expect(replySends.length).toBeGreaterThan(0);
-    expect(replySends.at(-1)!.body.reply_markup.is_persistent).toBe(true);
-  });
-
-  it("still re-shows keyword keyboard when text does not match a keyword", async () => {
-    const calls = installFetchSpy();
-    const supabase = makeSupabase({
-      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
-    });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: 42, type: "private" },
-      message_id: 9,
-      text: "random gibberish",
-    });
-
-    const sendMsg = calls.find((c) => c.method === "sendMessage");
-    expect(sendMsg?.body.reply_markup?.is_persistent).toBe(true);
+    await syncBotCommands("TOKEN", supabase);
+    await syncBotCommands("TOKEN", supabase);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
   });
 });
 
-describe("handleUserMessage — group keyboard resend-on-every-message", () => {
+// ---------------------------------------------------------------------------
+// User message handling — slash commands only, no keyboard
+// ---------------------------------------------------------------------------
+
+describe("handleUserMessage — slash commands", () => {
   beforeEach(() => {
     clearReplyCache();
+    resetCommandsSyncSignature();
     vi.unstubAllGlobals();
   });
 
-  it("resends persistent keyboard on unmatched group messages (any user)", async () => {
+  it("responds to /keyword in a group with the matching reply", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
     });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: -100, type: "group", title: "Test Group" },
-      from: { id: 10 }, // non-admin
-      message_id: 1,
-      text: "random gibberish",
-    });
-
-    const carrier = calls.find((c) => c.method === "sendMessage" && c.body.chat_id === -100);
-    expect(carrier).toBeDefined();
-    expect(carrier!.body.reply_markup).toEqual({
-      keyboard: [["hi"]],
-      resize_keyboard: true,
-      is_persistent: true,
-    });
-  });
-
-  it("attaches the persistent keyboard when a group user hits a keyword", async () => {
-    const calls = installFetchSpy();
-    const supabase = makeSupabase({
-      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
-    });
-
     await handleUserMessage("TOKEN", supabase, {
       chat: { id: -100, type: "group" },
       from: { id: 10 },
       message_id: 1,
-      text: "hi",
+      text: "/hi",
     });
-
-    const withKb = calls.find(
-      (c) =>
-        ["sendMessage", "copyMessage", "forwardMessage"].includes(c.method) &&
-        c.body.chat_id === -100 &&
-        c.body.reply_markup?.is_persistent === true,
-    );
-    expect(withKb).toBeDefined();
+    const sent = calls.find((c) => c.method === "sendMessage" && c.body.text === "hello");
+    expect(sent).toBeDefined();
+    // No persistent keyboard should be attached anywhere.
+    for (const c of calls) {
+      expect(c.body.reply_markup).toBeUndefined();
+    }
   });
 
-  it("resends persistent keyboard on /start from any user", async () => {
+  it("responds to /keyword@botname in a group", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
     });
-
     await handleUserMessage("TOKEN", supabase, {
       chat: { id: -100, type: "group" },
-      from: { id: 10 }, // non-admin also triggers the resend
-      message_id: 1,
+      from: { id: 10 },
+      message_id: 2,
+      text: "/hi@my_bot",
+    });
+    expect(calls.some((c) => c.method === "sendMessage" && c.body.text === "hello")).toBe(true);
+  });
+
+  it("does nothing for random group text (no keyword-matching by plain text)", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group" },
+      from: { id: 10 },
+      message_id: 3,
+      text: "hi",
+    });
+    expect(calls.length).toBe(0);
+  });
+
+  it("/start in group syncs the command menu but sends no keyboard", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group" },
+      from: { id: 10 },
+      message_id: 4,
       text: "/start",
     });
+    // Command sync should fire; no sendMessage carrier / keyboard.
+    // Wait a tick for the fire-and-forget promise.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.some((c) => c.method === "setMyCommands")).toBe(true);
+    expect(calls.every((c) => c.method !== "sendMessage")).toBe(true);
+  });
 
-    const carrier = calls.find((c) => c.method === "sendMessage" && c.body.chat_id === -100);
-    expect(carrier?.body.reply_markup?.is_persistent).toBe(true);
+  it("/start in private lists commands", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: 42, type: "private" },
+      message_id: 5,
+      text: "/start",
+    });
+    const listMsg = calls.find(
+      (c) => c.method === "sendMessage" && String(c.body.text ?? "").includes("/hi"),
+    );
+    expect(listMsg).toBeDefined();
+    expect(listMsg!.body.reply_markup).toBeUndefined();
   });
 });
 
-describe("handleMessage — admin keyboard persistence", () => {
+// ---------------------------------------------------------------------------
+// Admin message handling — slash commands in admin private chat
+// ---------------------------------------------------------------------------
+
+describe("handleMessage — admin slash command fallback", () => {
   beforeEach(() => {
     clearReplyCache();
+    resetCommandsSyncSignature();
     vi.unstubAllGlobals();
   });
 
-  it("re-attaches MAIN_KEYBOARD on /start (admin clear-history flow)", async () => {
-    const calls = installFetchSpy();
-    const supabase = makeSupabase();
-
-    await handleMessage("TOKEN", 1, supabase, {
-      chat: { id: 1, type: "private" },
-      from: { id: 1 },
-      message_id: 1,
-      text: "/start",
-    });
-
-    const sendMsg = calls.find((c) => c.method === "sendMessage");
-    expect(sendMsg?.body.reply_markup).toEqual(MAIN_KEYBOARD);
-  });
-
-  it("re-attaches MAIN_KEYBOARD when admin types a stored keyword with no active state", async () => {
+  it("admin typing /keyword in private with no active state sends the reply", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
       replies: [{ keyword: "ping", content: { type: "text", content: "pong" }, delete_after_seconds: 0 }],
     });
-
     await handleMessage("TOKEN", 1, supabase, {
       chat: { id: 1, type: "private" },
       from: { id: 1 },
       message_id: 5,
+      text: "/ping",
+    });
+    const sent = calls.find((c) => c.method === "sendMessage" && c.body.text === "pong");
+    expect(sent).toBeDefined();
+  });
+
+  it("admin typing raw keyword (no slash) is NOT sent as a reply", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "ping", content: { type: "text", content: "pong" }, delete_after_seconds: 0 }],
+    });
+    await handleMessage("TOKEN", 1, supabase, {
+      chat: { id: 1, type: "private" },
+      from: { id: 1 },
+      message_id: 6,
       text: "ping",
     });
-
-    const sendWithKb = calls.find(
-      (c) =>
-        ["sendMessage", "copyMessage", "forwardMessage"].includes(c.method) &&
-        c.body.reply_markup?.is_persistent === true,
-    );
-    expect(sendWithKb).toBeDefined();
-    expect(sendWithKb!.body.reply_markup).toEqual(MAIN_KEYBOARD);
+    expect(calls.every((c) => !(c.method === "sendMessage" && c.body.text === "pong"))).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Album webhook flow — media_group_id grouped into a single copyMessages call
+// Album flow still works via slash command
 // ---------------------------------------------------------------------------
 
-describe("webhook album flow — media_group_id grouping", () => {
+describe("album flow via slash command — media_group_id grouping", () => {
   beforeEach(() => {
     clearReplyCache();
+    resetCommandsSyncSignature();
     vi.unstubAllGlobals();
   });
 
-  it("groups an album stored in pending_replies into ONE copyMessages call, sorted by message_id", async () => {
+  it("groups album into ONE copyMessages call, sorted by message_id", async () => {
     const calls = installFetchSpy();
-    // Album items intentionally stored out-of-order (52, 50, 51) to prove sorting.
     const albumContent = [
       { type: "copy", from_chat_id: 100, message_id: 52, forward: false, media_group_id: "ALBUM_A" },
       { type: "copy", from_chat_id: 100, message_id: 50, forward: false, media_group_id: "ALBUM_A" },
@@ -310,68 +311,17 @@ describe("webhook album flow — media_group_id grouping", () => {
     const supabase = makeSupabase({
       replies: [{ keyword: "album", content: albumContent, delete_after_seconds: null }],
     });
-
     await handleUserMessage("TOKEN", supabase, {
       chat: { id: 555, type: "group" },
       message_id: 1,
-      text: "album",
+      text: "/album",
     });
-
     const copyMessagesCalls = calls.filter((c) => c.method === "copyMessages");
-    const copyMessageCalls = calls.filter((c) => c.method === "copyMessage");
-
     expect(copyMessagesCalls.length).toBe(1);
-    expect(copyMessageCalls.length).toBe(0); // no per-item fallback
     expect(copyMessagesCalls[0].body).toMatchObject({
       chat_id: 555,
       from_chat_id: 100,
       message_ids: [50, 51, 52],
-      remove_caption: false,
     });
-  });
-
-  it("keeps two different media_group_ids as two separate copyMessages calls", async () => {
-    const calls = installFetchSpy();
-    const content = [
-      { type: "copy", from_chat_id: 100, message_id: 10, forward: false, media_group_id: "A" },
-      { type: "copy", from_chat_id: 100, message_id: 11, forward: false, media_group_id: "A" },
-      { type: "copy", from_chat_id: 100, message_id: 20, forward: false, media_group_id: "B" },
-      { type: "copy", from_chat_id: 100, message_id: 21, forward: false, media_group_id: "B" },
-    ];
-    const supabase = makeSupabase({
-      replies: [{ keyword: "two", content, delete_after_seconds: null }],
-    });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: 777, type: "group" },
-      message_id: 2,
-      text: "two",
-    });
-
-    const copyMessagesCalls = calls.filter((c) => c.method === "copyMessages");
-    expect(copyMessagesCalls.length).toBe(2);
-    expect(copyMessagesCalls[0].body.message_ids).toEqual([10, 11]);
-    expect(copyMessagesCalls[1].body.message_ids).toEqual([20, 21]);
-    // No album item was flattened into single copyMessage.
-    expect(calls.filter((c) => c.method === "copyMessage").length).toBe(0);
-  });
-
-  it("degenerates to single copyMessage when album has only one item", async () => {
-    const calls = installFetchSpy();
-    const content = [
-      { type: "copy", from_chat_id: 100, message_id: 30, forward: false, media_group_id: "SOLO" },
-    ];
-    const supabase = makeSupabase({
-      replies: [{ keyword: "solo", content, delete_after_seconds: null }],
-    });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: 888, type: "group" },
-      message_id: 3,
-      text: "solo",
-    });
-
-    expect(calls.filter((c) => c.method === "copyMessages").length).toBe(0);
-    expect(calls.filter((c) => c.method === "copyMessage").length).toBe(1);
   });
 });

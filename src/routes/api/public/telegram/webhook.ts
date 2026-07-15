@@ -34,8 +34,17 @@ function getAdminClient() {
 }
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
-type ReplyCache = { expiresAt: number; config: number; replies: Map<string, ReplyCacheEntry>; rowsOrder: string[][] };
-const REPLY_CACHE_TTL_MS = 8_000; // 8s: keep hot cache but stay fresh across serverless isolates
+type ReplyCache = {
+  expiresAt: number;
+  config: number;
+  replies: Map<string, ReplyCacheEntry>;
+  rowsOrder: string[][];
+  /** slash-command (without leading '/') → keyword */
+  commands: Map<string, string>;
+  /** keyword.toLowerCase() → slash-command (without leading '/') */
+  keywordToCommand: Map<string, string>;
+};
+const REPLY_CACHE_TTL_MS = 8_000;
 const GROUP_TRACK_TTL_MS = 10 * 60_000;
 let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
@@ -46,6 +55,38 @@ export function clearReplyCache() {
   replyCachePromise = null;
 }
 
+// Telegram commands must match [a-z0-9_]{1,32}.
+export function slugifyKeyword(keyword: string): string {
+  let s = String(keyword).toLowerCase().normalize("NFKD");
+  s = s.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!s) {
+    let h = 0;
+    for (const ch of keyword) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    s = `cmd_${h.toString(36)}`;
+  }
+  if (s.length > 32) s = s.slice(0, 32).replace(/_+$/, "");
+  if (!s) s = "cmd";
+  return s;
+}
+
+function buildCommandMaps(keywords: string[]) {
+  const cmdToKw = new Map<string, string>();
+  const kwToCmd = new Map<string, string>();
+  for (const kw of keywords) {
+    const base = slugifyKeyword(kw);
+    let cmd = base;
+    let n = 2;
+    while (cmdToKw.has(cmd)) {
+      const suffix = `_${n}`;
+      cmd = (base.length + suffix.length > 32 ? base.slice(0, 32 - suffix.length) : base) + suffix;
+      n++;
+    }
+    cmdToKw.set(cmd, kw);
+    kwToCmd.set(kw.toLowerCase(), cmd);
+  }
+  return { cmdToKw, kwToCmd };
+}
+
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
@@ -54,21 +95,27 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
     const rowsMap = new Map<number, string[]>();
+    const orderedKeywords: string[] = [];
     for (const row of replyResult.data ?? []) {
-      replies.set(String(row.keyword).toLowerCase(), {
+      const kw = String(row.keyword);
+      replies.set(kw.toLowerCase(), {
         content: row.content,
         delete_after_seconds: row.delete_after_seconds as number | null,
       });
       const ri = Number(row.row_index ?? 0);
       if (!rowsMap.has(ri)) rowsMap.set(ri, []);
-      rowsMap.get(ri)!.push(String(row.keyword));
+      rowsMap.get(ri)!.push(kw);
+      orderedKeywords.push(kw);
     }
     const rowsOrder = [...rowsMap.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+    const { cmdToKw, kwToCmd } = buildCommandMaps(orderedKeywords);
     replyCache = {
       expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
       config: configResult.data?.delete_after_seconds ?? 0,
       replies,
       rowsOrder,
+      commands: cmdToKw,
+      keywordToCommand: kwToCmd,
     };
     replyCachePromise = null;
     return replyCache;
@@ -83,13 +130,40 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
 async function loadReplyCache(supabase: any): Promise<ReplyCache> {
   const now = Date.now();
   if (replyCache) {
-    // Stale-while-revalidate: serve stale immediately, refresh in background
     if (replyCache.expiresAt <= now && !replyCachePromise) {
       fetchReplyCache(supabase).catch(() => {});
     }
     return replyCache;
   }
   return fetchReplyCache(supabase);
+}
+
+// -------------------- setMyCommands sync --------------------
+let lastCommandsSyncSig = "";
+export async function syncBotCommands(token: string, supabase: any): Promise<void> {
+  if (!token) return;
+  const cache = await loadReplyCache(supabase);
+  const commands = [...cache.commands.entries()].map(([command, keyword]) => ({
+    command,
+    description: keyword.slice(0, 256),
+  }));
+  const sig = JSON.stringify(commands);
+  if (sig === lastCommandsSyncSig) return;
+  lastCommandsSyncSig = sig;
+  try {
+    const res = await tgRequest(token, "setMyCommands", { commands });
+    if (!res?.ok) {
+      console.error("setMyCommands failed", res?.description);
+      lastCommandsSyncSig = "";
+    }
+  } catch (err) {
+    console.error("setMyCommands error", err);
+    lastCommandsSyncSig = "";
+  }
+}
+
+export function resetCommandsSyncSignature() {
+  lastCommandsSyncSig = "";
 }
 
 
@@ -561,6 +635,35 @@ async function listKeywords(supabase: any): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Slash-command parsing
+// ---------------------------------------------------------------------------
+// A slash command message from Telegram looks like:
+//   "/qr" or "/qr@my_bot" or "/qr some args"
+// We strip the leading '/', drop the "@botname" suffix, and lowercase.
+export function parseSlashCommand(text: string | undefined): string | null {
+  if (!text) return null;
+  const t = text.trim();
+  if (!t.startsWith("/")) return null;
+  const first = t.split(/\s+/, 1)[0].slice(1);
+  const at = first.indexOf("@");
+  const raw = at >= 0 ? first.slice(0, at) : first;
+  const cmd = raw.toLowerCase();
+  return cmd || null;
+}
+
+async function resolveCommandKeyword(
+  supabase: any,
+  cmd: string,
+): Promise<{ keyword: string; entry: ReplyCacheEntry } | null> {
+  const cache = await loadReplyCache(supabase);
+  const kw = cache.commands.get(cmd);
+  if (!kw) return null;
+  const entry = cache.replies.get(kw.toLowerCase());
+  if (!entry) return null;
+  return { keyword: kw, entry };
+}
+
+// ---------------------------------------------------------------------------
 // Main message handler — mirrors handleMessage / handleUserMessage in bot.js
 // ---------------------------------------------------------------------------
 export async function handleUserMessage(token: string, supabase: any, msg: any) {
@@ -588,92 +691,56 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
         .then(() => {}, () => groupTrackCache.delete(chatId));
     }
 
-    // Keyword keyboard uses `is_persistent: true` (Telegram Bot API field on
-    // ReplyKeyboardMarkup) so it stays docked for every user who has seen it.
-    // We combine it with resend-on-every-message logic: every group message
-    // re-attaches the persistent keyboard, so new members and cleared clients
-    // pick it up immediately.
-    const groupRows = await listKeywordRows(supabase);
-    const groupKb = buildKeywordKeyboard(groupRows);
-
+    // Bot added to group → make sure the command menu is up to date.
     const botAdded = Array.isArray(msg.new_chat_members) &&
       msg.new_chat_members.some((m: any) => m?.is_bot);
-    const isStartCmd = text === "/start" || text?.startsWith("/start@");
-
-    if (isStartCmd) {
-      // Clean the "/start" command out of the group history regardless of who
-      // sent it; the persistent keyboard is re-attached below via the normal
-      // resend-on-every-message path.
-      tgRequest(token, "deleteMessage", {
-        chat_id: chatId,
-        message_id: msg.message_id,
-      }).catch(() => {});
+    if (botAdded) {
+      syncBotCommands(token, supabase).catch(() => {});
     }
 
-    if (text) {
-      const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
-      if (match) {
-        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, groupKb);
+    const cmd = parseSlashCommand(text);
+    if (cmd) {
+      if (cmd === "start" || cmd.startsWith("start")) {
+        // Ensure the slash-command menu is populated for this bot.
+        syncBotCommands(token, supabase).catch(() => {});
         return;
       }
-    }
-
-    // No keyword match → resend the persistent keyboard so it always reappears.
-    // Send a tiny carrier message and delete it right after; Telegram keeps the
-    // is_persistent keyboard docked for users who received it.
-    if (groupKb && (botAdded || isStartCmd || text)) {
-      const res = await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "⌨️",
-        reply_markup: groupKb,
-      });
-      const carrierId = res?.result?.message_id;
-      if (carrierId) {
-        tgRequest(token, "deleteMessage", {
-          chat_id: chatId,
-          message_id: carrierId,
-        }).catch(() => {});
+      const hit = await resolveCommandKeyword(supabase, cmd);
+      if (hit) {
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, hit.entry);
       }
     }
     return;
   }
 
-
-  const isStart = text === "/start" || text?.startsWith("/start@");
-
-  // Private chat (non-admin): show keyword keyboard on every interaction so
-  // it always reappears even after the user clears chat history.
-  const keys = await listKeywords(supabase);
-  const kb = buildKeywordKeyboard(await listKeywordRows(supabase));
-
-
-  if (isStart) {
+  // ---------- Private chat (non-admin user) ----------
+  const cmd = parseSlashCommand(text);
+  if (cmd === "start") {
+    await syncBotCommands(token, supabase).catch(() => {});
+    const keys = await listKeywords(supabase);
     if (keys.length === 0) {
       await tgRequest(token, "sendMessage", { chat_id: chatId, text: "សួស្តី! 👋" });
       return;
     }
+    const cache = await loadReplyCache(supabase);
+    const lines = [...cache.commands.entries()].map(
+      ([c, kw]) => `/${c} — ${kw}`,
+    );
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
-      text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-      reply_markup: kb,
+      text: `📋 បញ្ជីពាក្យបញ្ជា (${lines.length})\n\n${lines.join("\n")}`,
     });
     return;
   }
 
-  if (text) {
-    const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
-    if (match) {
-      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, kb);
-    } else if (kb) {
-      // No match: still re-show keyboard so user can pick a valid keyword
-      await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "សូមជ្រើសរើសពាក្យពីខាងក្រោម៖",
-        reply_markup: kb,
-      });
+  if (cmd) {
+    const hit = await resolveCommandKeyword(supabase, cmd);
+    if (hit) {
+      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, hit.entry);
     }
   }
 }
+
 
 export async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
   const chatId = msg.chat.id;
@@ -1078,6 +1145,8 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     if (text === "🗑 លុប") {
       await supabase.from("replies").delete().eq("keyword", kw);
       clearReplyCache();
+      resetCommandsSyncSignature();
+      syncBotCommands(token, supabase).catch(() => {});
       const keys = await listKeywords(supabase);
       if (keys.length === 0) {
         await saveState(supabase, chatId, null, null, null);
@@ -1133,6 +1202,9 @@ export async function handleMessage(token: string, adminId: number, supabase: an
           { onConflict: "keyword" },
         );
       clearReplyCache();
+      resetCommandsSyncSignature();
+      syncBotCommands(token, supabase).catch(() => {});
+
 
       await saveState(supabase, chatId, null, null, null, []);
       await tgRequest(token, "sendMessage", {
@@ -1165,19 +1237,20 @@ export async function handleMessage(token: string, adminId: number, supabase: an
   }
 
 
-  // Fallback: admin tests a keyword when no state is active
+  // Fallback: admin tests a keyword via slash command (/cmd) when no state is active
   if (!s.state && text) {
-    const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
-    if (match) {
-      // Parallelize delete + send; re-attach MAIN_KEYBOARD so it persists
-      // even after the admin clears chat history.
-      await Promise.all([
-        tgRequest(token, "deleteMessage", {
-          chat_id: chatId,
-          message_id: msg.message_id,
-        }).catch(() => {}),
-        sendReplies(token, supabase, chatId, match.content, 0, MAIN_KEYBOARD),
-      ]);
+    const cmd = parseSlashCommand(text);
+    if (cmd) {
+      const hit = await resolveCommandKeyword(supabase, cmd);
+      if (hit) {
+        await Promise.all([
+          tgRequest(token, "deleteMessage", {
+            chat_id: chatId,
+            message_id: msg.message_id,
+          }).catch(() => {}),
+          sendReplies(token, supabase, chatId, hit.entry.content, 0, MAIN_KEYBOARD),
+        ]);
+      }
     }
   }
 }
@@ -1221,7 +1294,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             const { supabaseAdmin } = await getAdminClient();
             const cache = replyCache; // sync peek; only take fast path when cache is hot
             if (cache) {
-              const match = cache.replies.get(msg.text.trim().toLowerCase());
+              const parsedCmd = parseSlashCommand(msg.text);
+              const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
+              const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;
               if (match && !Array.isArray(match.content)) {
                 const chatId = msg.chat.id;
                 const effective = match.delete_after_seconds ?? cache.config;

@@ -589,220 +589,52 @@ const reorderAccentStyle = {
 function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => void }) {
   const qc = useQueryClient();
 
-  // Build initial 2D grid from replies
-  const buildGrid = (rs: Reply[]): string[][] => {
-    const map = new Map<number, Reply[]>();
-    rs.forEach((r) => {
-      const ri = r.row_index ?? 0;
-      if (!map.has(ri)) map.set(ri, []);
-      map.get(ri)!.push(r);
-    });
-    const rows = [...map.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, items]) =>
-        items
-          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-          .map((r) => r.keyword),
-      );
-    return rows.length === 0 ? [] : rows;
-  };
+  // Sort by current row_index + position (preserving whatever order the DB has now),
+  // then flatten into a single linear list — slash commands are strictly /1, /2, /3…
+  const buildOrder = (rs: Reply[]): string[] =>
+    [...rs]
+      .sort((a, b) => {
+        const ra = a.row_index ?? 0, rb = b.row_index ?? 0;
+        if (ra !== rb) return ra - rb;
+        return (a.position ?? 0) - (b.position ?? 0);
+      })
+      .map((r) => r.keyword);
 
-  const [grid, setGrid] = useState<string[][]>(() => buildGrid(replies));
-  const [dragKw, setDragKw] = useState<string | null>(null);
-  const [overTarget, setOverTarget] = useState<{ row: number; col: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const slotRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const dragState = useRef<{ kw: string; offsetX: number; offsetY: number } | null>(null);
-  const [ghost, setGhost] = useState<{ kw: string; x: number; y: number; w: number } | null>(null);
+  const [order, setOrder] = useState<string[]>(() => buildOrder(replies));
 
   const [justSynced, setJustSynced] = useState(false);
   const syncedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const save = useMutation({
-    mutationFn: (rows: string[][]) => callApi("reorder_replies_grid", { rows }),
+    mutationFn: (keywords: string[]) => callApi("reorder_replies", { keywords }),
     onSuccess: () => {
       hapticNotify("success");
       qc.invalidateQueries({ queryKey: ["replies"] });
       setJustSynced(true);
       if (syncedTimer.current) clearTimeout(syncedTimer.current);
       syncedTimer.current = setTimeout(() => setJustSynced(false), 2200);
-      toast.success("✅ បាន Sync ទៅ Telegram keyboard");
+      toast.success("✅ បានផ្លាស់ប្តូរលេខរៀង /1 /2 /3…");
     },
     onError: (e: Error) => { hapticNotify("error"); toast.error("❌ Sync បរាជ័យ: " + e.message); },
   });
 
-  const commit = (next: string[][]) => {
-    const clean = next.map((r) => r.filter(Boolean)).filter((r) => r.length > 0);
-    setGrid(clean);
-    save.mutate(clean);
+  const commit = (next: string[]) => {
+    setOrder(next);
+    save.mutate(next);
   };
 
-  const removeFrom = (g: string[][], kw: string): string[][] => {
-    return g.map((row) => row.filter((k) => k !== kw));
-  };
-
-  const moveTo = (kw: string, targetRow: number, targetCol: number) => {
-    // targetRow can be grid.length (new row at end) or any index
-    let next: string[][] = grid.map((r) => r.slice());
-    // Find current
-    let curRow = -1, curCol = -1;
-    for (let i = 0; i < next.length; i++) {
-      const j = next[i].indexOf(kw);
-      if (j >= 0) { curRow = i; curCol = j; break; }
-    }
-    if (curRow < 0) return;
-
-    // Remove from current
-    next[curRow].splice(curCol, 1);
-
-    // Adjust target if inserting into same row after current position
-    let tRow = targetRow;
-    let tCol = targetCol;
-    if (tRow === curRow && tCol > curCol) tCol -= 1;
-
-    // Ensure target row exists
-    while (next.length <= tRow) next.push([]);
-
-    // Cap at MAX_PER_ROW: if row already full (excluding moved item), overflow to new row
-    if (next[tRow].length >= MAX_PER_ROW) {
-      // Insert a new row at tRow and place item there alone
-      next.splice(tRow, 0, [kw]);
-    } else {
-      const insertCol = Math.max(0, Math.min(tCol, next[tRow].length));
-      next[tRow].splice(insertCol, 0, kw);
-    }
-
-    // Drop empty rows
-    next = next.filter((r) => r.length > 0);
+  const move = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= order.length || to >= order.length) return;
+    const next = order.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    hapticImpact("light");
     commit(next);
   };
 
-  const overTargetRef = useRef<{ row: number; col: number } | null>(null);
-
-  const updateFromPoint = (clientX: number, clientY: number) => {
-    if (!dragState.current || !containerRef.current) return;
-    const cRect = containerRef.current.getBoundingClientRect();
-    setGhost((g) =>
-      g
-        ? { ...g, x: clientX - cRect.left - dragState.current!.offsetX, y: clientY - cRect.top - dragState.current!.offsetY }
-        : g,
-    );
-    // Find nearest slot
-    let best: { row: number; col: number } | null = null;
-    let bestDist = Infinity;
-    slotRefs.current.forEach((el, key) => {
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-      const d = Math.hypot(clientX - cx, clientY - cy);
-      if (d < bestDist) {
-        bestDist = d;
-        const [ri, ci] = key.split(":").map(Number);
-        best = { row: ri, col: ci };
-      }
-    });
-    if (best) {
-      const b: { row: number; col: number } = best;
-      const prev = overTargetRef.current;
-      if (!prev || prev.row !== b.row || prev.col !== b.col) {
-        overTargetRef.current = b;
-        setOverTarget(b);
-        hapticImpact("light");
-      }
-    }
-  };
-
-  const endDrag = (commitMove: boolean) => {
-    const st = dragState.current;
-    const target = overTargetRef.current;
-    dragState.current = null;
-    overTargetRef.current = null;
-    setDragKw(null);
-    setGhost(null);
-    setOverTarget(null);
-    // Detach window listeners
-    window.removeEventListener("pointermove", winMove);
-    window.removeEventListener("pointerup", winUp);
-    window.removeEventListener("pointercancel", winCancel);
-    window.removeEventListener("touchmove", winTouchMove);
-    window.removeEventListener("touchend", winTouchEnd);
-    window.removeEventListener("touchcancel", winTouchEnd);
-    if (commitMove && st && target) moveTo(st.kw, target.row, target.col);
-  };
-
-  function winMove(e: PointerEvent) {
-    if (!dragState.current) return;
-    e.preventDefault();
-    updateFromPoint(e.clientX, e.clientY);
-  }
-  function winUp() { endDrag(true); }
-  function winCancel() { endDrag(false); }
-  function winTouchMove(e: TouchEvent) {
-    if (!dragState.current || e.touches.length === 0) return;
-    e.preventDefault();
-    const t = e.touches[0];
-    updateFromPoint(t.clientX, t.clientY);
-  }
-  function winTouchEnd() { endDrag(true); }
-
-  const beginDrag = (clientX: number, clientY: number, kw: string, itemEl: HTMLElement) => {
-    if (!containerRef.current) return;
-    const rect = itemEl.getBoundingClientRect();
-    const cRect = containerRef.current.getBoundingClientRect();
-    dragState.current = { kw, offsetX: clientX - rect.left, offsetY: clientY - rect.top };
-    setDragKw(kw);
-    setGhost({
-      kw,
-      x: rect.left - cRect.left,
-      y: rect.top - cRect.top,
-      w: rect.width,
-    });
-    hapticImpact("medium");
-    // Attach window listeners (works regardless of pointer capture / SVG target quirks on iOS Telegram WebView)
-    window.addEventListener("pointermove", winMove, { passive: false });
-    window.addEventListener("pointerup", winUp);
-    window.addEventListener("pointercancel", winCancel);
-    window.addEventListener("touchmove", winTouchMove, { passive: false });
-    window.addEventListener("touchend", winTouchEnd);
-    window.addEventListener("touchcancel", winTouchEnd);
-  };
-
-  const onPointerDown = (e: React.PointerEvent, kw: string) => {
-    const el = (e.currentTarget as HTMLElement).closest("[data-item]") as HTMLElement | null;
-    if (!el) return;
-    e.preventDefault();
-    beginDrag(e.clientX, e.clientY, kw, el);
-  };
-
-  const onTouchStart = (e: React.TouchEvent, kw: string) => {
-    if (dragState.current) return; // pointerdown may have fired
-    const el = (e.currentTarget as HTMLElement).closest("[data-item]") as HTMLElement | null;
-    if (!el || e.touches.length === 0) return;
-    const t = e.touches[0];
-    beginDrag(t.clientX, t.clientY, kw, el);
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      window.removeEventListener("pointermove", winMove);
-      window.removeEventListener("pointerup", winUp);
-      window.removeEventListener("pointercancel", winCancel);
-      window.removeEventListener("touchmove", winTouchMove);
-      window.removeEventListener("touchend", winTouchEnd);
-      window.removeEventListener("touchcancel", winTouchEnd);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Register a slot: between/around items in a row, plus one at the end + a "new row" row
-  const registerSlot = (row: number, col: number) => (el: HTMLDivElement | null) => {
-    const key = `${row}:${col}`;
-    if (el) slotRefs.current.set(key, el);
-    else slotRefs.current.delete(key);
-  };
-
-  const isDragging = dragKw !== null;
+  const moveUp = (i: number) => move(i, i - 1);
+  const moveDown = (i: number) => move(i, i + 1);
+  const moveTop = (i: number) => move(i, 0);
+  const moveBottom = (i: number) => move(i, order.length - 1);
 
   const content = (
     <div
@@ -814,173 +646,128 @@ function ReorderPanel({ replies, onClose }: { replies: Reply[]; onClose: () => v
         WebkitTransform: "translateZ(0)",
       }}
     >
-
       <div className="flex-1 overflow-y-auto px-3 pt-2 pb-6 space-y-3">
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onClose}
-          className="flex items-center gap-1 tg-hint text-sm px-2 py-2 active:opacity-70"
-          style={reorderHintStyle}
-        >
-          <ChevronLeft className="h-4 w-4" /> រួចរាល់
-        </button>
-        <div className="flex-1" />
-        <div
-          className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full transition-all ${
-            save.isPending
-              ? "bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]"
-              : justSynced
-              ? "bg-green-500/15 text-green-500"
-              : "tg-hint opacity-70"
-          }`}
-          style={!save.isPending && !justSynced ? reorderHintStyle : undefined}
-        >
-          {save.isPending ? (
-            <>
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>កំពុង Sync ទៅ Telegram…</span>
-            </>
-          ) : justSynced ? (
-            <>
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>បាន Sync ✓</span>
-            </>
-          ) : (
-            <>
-              <Send className="h-3.5 w-3.5" />
-              <span>Auto-sync</span>
-            </>
-          )}
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1 tg-hint text-sm px-2 py-2 active:opacity-70"
+            style={reorderHintStyle}
+          >
+            <ChevronLeft className="h-4 w-4" /> រួចរាល់
+          </button>
+          <div className="flex-1" />
+          <div
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full transition-all ${
+              save.isPending
+                ? "bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]"
+                : justSynced
+                ? "bg-green-500/15 text-green-500"
+                : "tg-hint opacity-70"
+            }`}
+            style={!save.isPending && !justSynced ? reorderHintStyle : undefined}
+          >
+            {save.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>កំពុង Sync…</span>
+              </>
+            ) : justSynced ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>បាន Sync ✓</span>
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" />
+                <span>Auto-sync</span>
+              </>
+            )}
+          </div>
         </div>
-      </div>
 
-      {(save.isPending || justSynced) && (
-        <div
-          className={`rounded-xl px-3 py-2 text-xs flex items-center gap-2 border ${
-            save.isPending
-              ? "bg-[var(--tg-btn)]/10 border-[var(--tg-btn)]/30 text-[var(--tg-btn)]"
-              : "bg-green-500/10 border-green-500/30 text-green-500"
-          }`}
-        >
-          {save.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <span>កំពុងអាប់ដេត layout ថ្មីទៅ Telegram keyboard…</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>Layout ថ្មីបានអាប់ដេតទៅ Telegram keyboard រួចរាល់</span>
-            </>
-          )}
+        {/* Instruction card */}
+        <div className="tg-card p-3 flex items-center gap-2" style={reorderSurfaceStyle}>
+          <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center" style={reorderAccentStyle}>
+            <ArrowUpDown className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">ប្តូរលេខរៀង /1 /2 /3…</p>
+            <p className="tg-hint text-xs" style={reorderHintStyle}>ចុច ⬆️ ⬇️ ដើម្បីផ្លាស់ទី · ⏫ ⏬ ដើម្បីទៅដើម/ចុង</p>
+          </div>
         </div>
-      )}
 
-      <div className="tg-card p-3 flex items-center gap-2" style={reorderSurfaceStyle}>
-        <div className="h-9 w-9 rounded-lg bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center" style={reorderAccentStyle}>
-          <ArrowUpDown className="h-4 w-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold">អូសដាក់ជា Grid</p>
-          <p className="tg-hint text-xs" style={reorderHintStyle}>មួយជួរបាន 1–{MAX_PER_ROW} ពាក្យ · អូសទៅជួរណាក៏បាន</p>
-        </div>
-      </div>
+        {/* Linear list with explicit buttons */}
+        <div className="space-y-2">
+          {order.map((kw, i) => {
+            const isFirst = i === 0;
+            const isLast = i === order.length - 1;
+            return (
+              <div
+                key={kw}
+                className="tg-card p-3 flex items-center gap-2"
+                style={reorderSurfaceStyle}
+              >
+                {/* Command number badge */}
+                <div
+                  className="h-12 w-14 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold"
+                  style={reorderAccentStyle}
+                >
+                  /{i + 1}
+                </div>
 
-      <div
-        ref={containerRef}
-        className="relative select-none"
-        style={{ touchAction: "none" }}
-      >
-        <div className="space-y-3">
-          {grid.map((row, ri) => (
-            <div
-              key={`row-${ri}`}
-              className="tg-card p-3 flex items-stretch gap-2 min-h-[76px]"
-              style={reorderSurfaceStyle}
-            >
-              <div className="w-8 shrink-0 grid place-items-center">
-                <div className="h-7 w-7 rounded-full bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center text-sm font-bold" style={reorderAccentStyle}>
-                  {ri + 1}
+                {/* Keyword name */}
+                <p className="text-sm font-semibold truncate flex-1 min-w-0">{kw}</p>
+
+                {/* Action buttons — clear, tappable */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => moveTop(i)}
+                    disabled={isFirst || save.isPending}
+                    className="h-10 w-10 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95 disabled:opacity-30"
+                    style={reorderElevatedStyle}
+                    aria-label="Move to top"
+                  >
+                    <ChevronsUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => moveUp(i)}
+                    disabled={isFirst || save.isPending}
+                    className="h-10 w-10 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95 disabled:opacity-30"
+                    style={reorderElevatedStyle}
+                    aria-label="Move up"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => moveDown(i)}
+                    disabled={isLast || save.isPending}
+                    className="h-10 w-10 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95 disabled:opacity-30"
+                    style={reorderElevatedStyle}
+                    aria-label="Move down"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => moveBottom(i)}
+                    disabled={isLast || save.isPending}
+                    className="h-10 w-10 rounded-xl bg-[var(--tg-section-2)] grid place-items-center active:scale-95 disabled:opacity-30"
+                    style={reorderElevatedStyle}
+                    aria-label="Move to bottom"
+                  >
+                    <ChevronsDown className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-              <div className="flex-1 flex flex-wrap items-stretch gap-2">
-                {row.map((kw, ci) => {
-                  const dragging = dragKw === kw;
-                  const showBefore =
-                    isDragging && overTarget?.row === ri && overTarget?.col === ci && dragKw !== kw;
-                  return (
-                    <React.Fragment key={kw}>
-                      <div
-                        ref={registerSlot(ri, ci)}
-                        className={`w-1.5 self-stretch rounded-full transition-colors ${showBefore ? "bg-[var(--tg-btn)]" : ""}`}
-                      />
-                      <div
-                        data-item
-                        className={`flex-1 min-w-[130px] rounded-2xl bg-[var(--tg-section-2)] px-3 py-3 flex items-center gap-2 shadow-sm ring-1 ring-black/5 transition-all ${dragging ? "opacity-30 scale-95" : "active:scale-[0.98]"}`}
-                        style={reorderElevatedStyle}
-                      >
-                        <div
-                          onPointerDown={(e) => onPointerDown(e, kw)}
-                          onTouchStart={(e) => onTouchStart(e, kw)}
-                          onContextMenu={(e) => e.preventDefault()}
-                          className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/10 text-[var(--tg-btn)] grid place-items-center cursor-grab active:cursor-grabbing active:bg-[var(--tg-btn)]/25"
-                          style={{ ...reorderAccentStyle, touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
-                          aria-label="Drag"
-                        >
-                          <GripVertical className="h-5 w-5 pointer-events-none" />
-                        </div>
-                        <p className="text-sm font-semibold truncate flex-1">{kw}</p>
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
-                {/* trailing slot */}
-                <div
-                  ref={registerSlot(ri, row.length)}
-                  className={`w-1.5 self-stretch rounded-full transition-colors ${
-                    isDragging && overTarget?.row === ri && overTarget?.col === row.length
-                      ? "bg-[var(--tg-btn)]"
-                      : ""
-                  }`}
-                />
-              </div>
-            </div>
-          ))}
-
-          {/* new-row drop zone */}
-          <div
-            ref={registerSlot(grid.length, 0)}
-            className={`h-16 rounded-2xl border-2 border-dashed grid place-items-center text-sm font-semibold transition-all ${
-              isDragging && overTarget?.row === grid.length
-                ? "border-[var(--tg-btn)] bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] scale-[1.01]"
-                : "border-[var(--tg-hint)]/40 tg-hint"
-            }`}
-            style={isDragging && overTarget?.row === grid.length ? reorderAccentStyle : reorderHintStyle}
-          >
-            ＋ ជួរថ្មី
-          </div>
+            );
+          })}
         </div>
-
-        {ghost && (
-          <div
-            className="pointer-events-none absolute z-50"
-            style={{ left: ghost.x, top: ghost.y, width: ghost.w }}
-          >
-            <div className="rounded-2xl bg-[var(--tg-section)] ring-2 ring-[var(--tg-btn)] shadow-2xl shadow-black/50 px-3 py-3 flex items-center gap-2 scale-[1.05]" style={{ ...reorderSurfaceStyle, borderColor: REORDER_COLORS.button }}>
-              <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/20 text-[var(--tg-btn)] grid place-items-center" style={reorderAccentStyle}>
-                <GripVertical className="h-5 w-5" />
-              </div>
-              <p className="text-sm font-semibold truncate">{ghost.kw}</p>
-            </div>
-          </div>
-        )}
-      </div>
       </div>
     </div>
   );
   return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
+
 
 
 

@@ -72,20 +72,15 @@ export function slugifyKeyword(keyword: string): string {
 function buildCommandMaps(keywords: string[]) {
   const cmdToKw = new Map<string, string>();
   const kwToCmd = new Map<string, string>();
-  for (const kw of keywords) {
-    const base = slugifyKeyword(kw);
-    let cmd = base;
-    let n = 2;
-    while (cmdToKw.has(cmd)) {
-      const suffix = `_${n}`;
-      cmd = (base.length + suffix.length > 32 ? base.slice(0, 32 - suffix.length) : base) + suffix;
-      n++;
-    }
+  // Number commands sequentially: /1, /2, /3, ... in keyword order.
+  keywords.forEach((kw, i) => {
+    const cmd = String(i + 1);
     cmdToKw.set(cmd, kw);
     kwToCmd.set(kw.toLowerCase(), cmd);
-  }
+  });
   return { cmdToKw, kwToCmd };
 }
+
 
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;

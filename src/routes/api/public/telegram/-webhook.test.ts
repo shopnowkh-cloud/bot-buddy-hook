@@ -177,13 +177,13 @@ describe("handleUserMessage — private chat keyboard persistence", () => {
   });
 });
 
-describe("handleUserMessage — group keyboard behavior", () => {
+describe("handleUserMessage — group keyboard resend-on-every-message", () => {
   beforeEach(() => {
     clearReplyCache();
     vi.unstubAllGlobals();
   });
 
-  it("does NOT send keyboard on unmatched non-admin group messages", async () => {
+  it("resends persistent keyboard on unmatched group messages (any user)", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
@@ -196,33 +196,16 @@ describe("handleUserMessage — group keyboard behavior", () => {
       text: "random gibberish",
     });
 
-    const keyboardSends = calls.filter((c) => c.method === "sendMessage" && c.body.chat_id === -100);
-    expect(keyboardSends.length).toBe(0);
-  });
-
-  it("sends the persistent keyboard when ADMIN types /start in a group", async () => {
-    const calls = installFetchSpy();
-    const supabase = makeSupabase({
-      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
-    });
-
-    await handleUserMessage("TOKEN", supabase, {
-      chat: { id: -100, type: "group", title: "Test Group" },
-      from: { id: 1 }, // admin (see mock at top of file)
-      message_id: 1,
-      text: "/start",
-    });
-
-    const sendMsg = calls.find((c) => c.method === "sendMessage" && c.body.chat_id === -100);
-    expect(sendMsg).toBeDefined();
-    expect(sendMsg!.body.reply_markup).toEqual({
+    const carrier = calls.find((c) => c.method === "sendMessage" && c.body.chat_id === -100);
+    expect(carrier).toBeDefined();
+    expect(carrier!.body.reply_markup).toEqual({
       keyboard: [["hi"]],
       resize_keyboard: true,
       is_persistent: true,
     });
   });
 
-  it("does NOT send keyboard when NON-admin types /start in a group", async () => {
+  it("attaches the persistent keyboard when a group user hits a keyword", async () => {
     const calls = installFetchSpy();
     const supabase = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
@@ -232,10 +215,33 @@ describe("handleUserMessage — group keyboard behavior", () => {
       chat: { id: -100, type: "group" },
       from: { id: 10 },
       message_id: 1,
+      text: "hi",
+    });
+
+    const withKb = calls.find(
+      (c) =>
+        ["sendMessage", "copyMessage", "forwardMessage"].includes(c.method) &&
+        c.body.chat_id === -100 &&
+        c.body.reply_markup?.is_persistent === true,
+    );
+    expect(withKb).toBeDefined();
+  });
+
+  it("resends persistent keyboard on /start from any user", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "hello" }, delete_after_seconds: null }],
+    });
+
+    await handleUserMessage("TOKEN", supabase, {
+      chat: { id: -100, type: "group" },
+      from: { id: 10 }, // non-admin also triggers the resend
+      message_id: 1,
       text: "/start",
     });
 
-    expect(calls.filter((c) => c.method === "sendMessage" && c.body.chat_id === -100).length).toBe(0);
+    const carrier = calls.find((c) => c.method === "sendMessage" && c.body.chat_id === -100);
+    expect(carrier?.body.reply_markup?.is_persistent).toBe(true);
   });
 });
 

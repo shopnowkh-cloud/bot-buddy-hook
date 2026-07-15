@@ -588,10 +588,11 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
         .then(() => {}, () => groupTrackCache.delete(chatId));
     }
 
-    // Keyword keyboard is `is_persistent: true`. In groups we ONLY (re)send it
-    // when the bot is added, or when an ADMIN types /start. After that,
-    // Telegram keeps showing it to each user who has seen it once — no need
-    // to broadcast it on every message.
+    // Keyword keyboard uses `is_persistent: true` (Telegram Bot API field on
+    // ReplyKeyboardMarkup) so it stays docked for every user who has seen it.
+    // We combine it with resend-on-every-message logic: every group message
+    // re-attaches the persistent keyboard, so new members and cleared clients
+    // pick it up immediately.
     const groupRows = await listKeywordRows(supabase);
     const groupKb = buildKeywordKeyboard(groupRows);
 
@@ -599,48 +600,41 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
       msg.new_chat_members.some((m: any) => m?.is_bot);
     const isStartCmd = text === "/start" || text?.startsWith("/start@");
 
-    if (groupKb && (botAdded || isStartCmd)) {
-      const { isAdminUserId } = await import("@/lib/admin-config.server");
-      const allowed = botAdded || (await isAdminUserId(msg.from?.id));
-      if (allowed) {
-        // Send a tiny message carrying the persistent keyboard, then delete
-        // both it and the admin's "/start" command so the chat stays clean.
-        // Telegram clients keep the persistent keyboard visible for users
-        // who received it, even after the carrier message is deleted.
-        const res = await tgRequest(token, "sendMessage", {
-          chat_id: chatId,
-          text: "⌨️",
-          reply_markup: groupKb,
-        });
-        const carrierId = res?.result?.message_id;
-        await Promise.all([
-          isStartCmd
-            ? tgRequest(token, "deleteMessage", {
-                chat_id: chatId,
-                message_id: msg.message_id,
-              }).catch(() => {})
-            : Promise.resolve(),
-          carrierId
-            ? tgRequest(token, "deleteMessage", {
-                chat_id: chatId,
-                message_id: carrierId,
-              }).catch(() => {})
-            : Promise.resolve(),
-        ]);
-      }
-      if (isStartCmd) return;
+    if (isStartCmd) {
+      // Clean the "/start" command out of the group history regardless of who
+      // sent it; the persistent keyboard is re-attached below via the normal
+      // resend-on-every-message path.
+      tgRequest(token, "deleteMessage", {
+        chat_id: chatId,
+        message_id: msg.message_id,
+      }).catch(() => {});
     }
 
     if (text) {
       const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
       if (match) {
-        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match);
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, groupKb);
         return;
       }
     }
 
-    // No keyword match → do nothing. Keyboard already persists for users
-    // who have seen it via /start.
+    // No keyword match → resend the persistent keyboard so it always reappears.
+    // Send a tiny carrier message and delete it right after; Telegram keeps the
+    // is_persistent keyboard docked for users who received it.
+    if (groupKb && (botAdded || isStartCmd || text)) {
+      const res = await tgRequest(token, "sendMessage", {
+        chat_id: chatId,
+        text: "⌨️",
+        reply_markup: groupKb,
+      });
+      const carrierId = res?.result?.message_id;
+      if (carrierId) {
+        tgRequest(token, "deleteMessage", {
+          chat_id: chatId,
+          message_id: carrierId,
+        }).catch(() => {});
+      }
+    }
     return;
   }
 

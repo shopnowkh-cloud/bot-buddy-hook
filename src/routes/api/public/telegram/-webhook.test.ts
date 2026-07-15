@@ -209,7 +209,6 @@ describe("webhook POST — auto-sync on every update", () => {
     clearReplyCache();
     resetCommandsSyncSignature();
     vi.unstubAllGlobals();
-    vi.resetModules();
     process.env.TELEGRAM_BOT_TOKEN = "TOKEN";
     process.env.ADMIN_CHAT_ID = "1";
     process.env.TELEGRAM_WEBHOOK_SECRET = "SECRET";
@@ -219,15 +218,8 @@ describe("webhook POST — auto-sync on every update", () => {
 
   afterEach(() => {
     process.env = { ...OLD_ENV };
+    __mockAdmin.current = null;
   });
-
-  async function loadRouteWithSupabase(supabase: any) {
-    vi.doMock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: supabase }));
-    const mod = await import("./webhook");
-    mod.clearReplyCache();
-    mod.resetCommandsSyncSignature();
-    return mod;
-  }
 
   function makeReq(body: any, secretOk = true) {
     const { createHash } = require("crypto");
@@ -242,37 +234,55 @@ describe("webhook POST — auto-sync on every update", () => {
     });
   }
 
+  const handler = (WebhookRoute as any).options.server.handlers.POST;
+
   it("triggers setMyCommands on incoming update (auto-sync)", async () => {
     const calls = installFetchSpy();
-    const supabase = makeSupabase({
+    __mockAdmin.current = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
     });
-    const mod = await loadRouteWithSupabase(supabase);
-    const handler = (mod as any).Route.options.server.handlers.POST;
 
     await handler({
-      request: makeReq({ update_id: 1, message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: 1, text: "hello" } }),
+      request: makeReq({
+        update_id: 1,
+        message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: 1, text: "hello" },
+      }),
     });
-    // Let fire-and-forget microtasks flush.
-    await new Promise((r) => setTimeout(r, 10));
+    // Flush fire-and-forget microtasks.
+    await new Promise((r) => setTimeout(r, 20));
     expect(calls.some((c) => c.method === "setMyCommands")).toBe(true);
   });
 
   it("dedups auto-sync across multiple sequential webhook updates", async () => {
     const calls = installFetchSpy();
-    const supabase = makeSupabase({
+    __mockAdmin.current = makeSupabase({
       replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
     });
-    const mod = await loadRouteWithSupabase(supabase);
-    const handler = (mod as any).Route.options.server.handlers.POST;
 
     for (let i = 0; i < 3; i++) {
       await handler({
-        request: makeReq({ update_id: i, message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: i, text: "x" } }),
+        request: makeReq({
+          update_id: 100 + i,
+          message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: i, text: "x" },
+        }),
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 20));
     }
     expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+  });
+
+  it("does not trigger auto-sync when the secret token is invalid", async () => {
+    const calls = installFetchSpy();
+    __mockAdmin.current = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+
+    const res = await handler({
+      request: makeReq({ update_id: 1, message: { chat: { id: 1, type: "private" }, message_id: 1, text: "x" } }, false),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(res.status).toBe(401);
+    expect(calls.some((c) => c.method === "setMyCommands")).toBe(false);
   });
 });
 

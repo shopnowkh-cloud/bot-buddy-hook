@@ -160,7 +160,8 @@ describe("syncBotCommands", () => {
     });
     await syncBotCommands("TOKEN", supabase);
     await syncBotCommands("TOKEN", supabase);
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+    // 3 scopes registered per sync (default, all_private_chats, all_group_chats).
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(3);
   });
 
   it("dedups concurrent parallel calls — only one setMyCommands is issued", async () => {
@@ -173,7 +174,7 @@ describe("syncBotCommands", () => {
       syncBotCommands("TOKEN", supabase),
       syncBotCommands("TOKEN", supabase),
     ]);
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(3);
   });
 
   it("re-syncs after resetCommandsSyncSignature() (e.g. keyword mutation)", async () => {
@@ -185,7 +186,7 @@ describe("syncBotCommands", () => {
     resetCommandsSyncSignature();
     clearReplyCache();
     await syncBotCommands("TOKEN", supabase);
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(2);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(6);
   });
 
   it("no-ops when token is empty", async () => {
@@ -268,7 +269,7 @@ describe("webhook POST — auto-sync on every update", () => {
       });
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(3);
   });
 
   it("does not trigger auto-sync when the secret token is invalid", async () => {

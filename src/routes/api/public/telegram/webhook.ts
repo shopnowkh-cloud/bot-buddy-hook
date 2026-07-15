@@ -134,6 +134,14 @@ async function loadReplyCache(supabase: any): Promise<ReplyCache> {
 }
 
 // -------------------- setMyCommands sync --------------------
+// Register commands under multiple scopes in parallel so Telegram clients
+// (private chats + groups) refresh the slash-command menu immediately
+// instead of waiting for the "default" scope cache to expire.
+const COMMAND_SCOPES = [
+  { type: "default" as const },
+  { type: "all_private_chats" as const },
+  { type: "all_group_chats" as const },
+];
 let lastCommandsSyncSig = "";
 export async function syncBotCommands(token: string, supabase: any): Promise<void> {
   if (!token) return;
@@ -146,9 +154,12 @@ export async function syncBotCommands(token: string, supabase: any): Promise<voi
   if (sig === lastCommandsSyncSig) return;
   lastCommandsSyncSig = sig;
   try {
-    const res = await tgRequest(token, "setMyCommands", { commands });
-    if (!res?.ok) {
-      console.error("setMyCommands failed", res?.description);
+    const results = await Promise.all(
+      COMMAND_SCOPES.map((scope) => tgRequest(token, "setMyCommands", { commands, scope })),
+    );
+    const failed = results.find((r) => !r?.ok);
+    if (failed) {
+      console.error("setMyCommands failed", failed?.description);
       lastCommandsSyncSig = "";
     }
   } catch (err) {

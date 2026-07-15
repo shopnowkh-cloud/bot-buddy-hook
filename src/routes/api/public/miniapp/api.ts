@@ -13,7 +13,10 @@ function sb() {
   return _supabase;
 }
 
-/** Refresh cache + re-register Telegram slash-commands (setMyCommands). */
+/** Refresh cache + re-register Telegram slash-commands (setMyCommands).
+ *  Awaits the sync so the HTTP response returns only after Telegram has
+ *  confirmed the new command list — the Mini App sees the updated menu
+ *  the moment the mutation resolves. */
 async function invalidateAndSyncCommands() {
   try {
     const { clearReplyCache, resetCommandsSyncSignature, syncBotCommands } = await import(
@@ -22,7 +25,7 @@ async function invalidateAndSyncCommands() {
     clearReplyCache();
     resetCommandsSyncSignature();
     const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (token) syncBotCommands(token, sb()).catch(() => {});
+    if (token) await syncBotCommands(token, sb()).catch(() => {});
   } catch {}
 }
 

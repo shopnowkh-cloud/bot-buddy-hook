@@ -235,7 +235,7 @@ function hapticNotify(type: "success" | "warning" | "error") {
 }
 
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  const res = await fetch("/api/public/miniapp/api", {
+  const res = await fetch("/api/miniapp", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -185,21 +185,27 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // ---------------------------------------------------------------------------
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
-const MINIAPP_BASE_URL =
-  process.env.TELEGRAM_MINIAPP_URL ||
-  "https://bot-buddy-hook.lovable.app/miniapp";
+function getMiniAppUrl() {
+  // Env is bound at request time in the server runtime, so never read this at
+  // module scope. Set TELEGRAM_MINIAPP_URL to the Cloudflare Worker URL.
+  return process.env.TELEGRAM_MINIAPP_URL || "https://bot-buddy-hook.lovable.app/miniapp";
+}
 
-export const MAIN_KEYBOARD = {
-  keyboard: [
-    [{ text: "🧩 បើក Mini App", web_app: { url: MINIAPP_BASE_URL } }],
-    ["បន្ថែមពាក្យថ្មី"],
-    ["បញ្ជីពាក្យ កែប្រែ&លុប"],
-    ["⏱ កំណត់ Timer លុបសារ"],
-    ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-};
+export function mainKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "🧩 បើក Mini App", web_app: { url: getMiniAppUrl() } }],
+      ["បន្ថែមពាក្យថ្មី"],
+      ["បញ្ជីពាក្យ កែប្រែ&លុប"],
+      ["⏱ កំណត់ Timer លុបសារ"],
+      ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+export const MAIN_KEYBOARD = mainKeyboard();
 
 const SCHED_REPEAT_KEYBOARD = {
   keyboard: [["🔂 មួយដង", "🔁 រាល់ថ្ងៃ"], ["❌ បោះបង់"]],

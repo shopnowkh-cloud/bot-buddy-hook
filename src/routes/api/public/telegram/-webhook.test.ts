@@ -1,7 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("@/lib/admin-config.server", () => ({
   isAdminUserId: vi.fn(async (id: number | undefined | null) => Number(id) === 1),
+}));
+
+// Shared holder so tests can swap the mocked supabaseAdmin per-case.
+const __mockAdmin: { current: any } = { current: null };
+vi.mock("@/integrations/supabase/client.server", () => ({
+  get supabaseAdmin() {
+    return __mockAdmin.current;
+  },
 }));
 
 import {
@@ -12,6 +20,7 @@ import {
   parseSlashCommand,
   syncBotCommands,
   resetCommandsSyncSignature,
+  Route as WebhookRoute,
 } from "./webhook";
 
 // ---------------------------------------------------------------------------
@@ -152,6 +161,128 @@ describe("syncBotCommands", () => {
     await syncBotCommands("TOKEN", supabase);
     await syncBotCommands("TOKEN", supabase);
     expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+  });
+
+  it("dedups concurrent parallel calls — only one setMyCommands is issued", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    await Promise.all([
+      syncBotCommands("TOKEN", supabase),
+      syncBotCommands("TOKEN", supabase),
+      syncBotCommands("TOKEN", supabase),
+    ]);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+  });
+
+  it("re-syncs after resetCommandsSyncSignature() (e.g. keyword mutation)", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    await syncBotCommands("TOKEN", supabase);
+    resetCommandsSyncSignature();
+    clearReplyCache();
+    await syncBotCommands("TOKEN", supabase);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(2);
+  });
+
+  it("no-ops when token is empty", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    await syncBotCommands("", supabase);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook POST — auto-sync on every incoming update
+// ---------------------------------------------------------------------------
+
+describe("webhook POST — auto-sync on every update", () => {
+  const OLD_ENV = { ...process.env };
+
+  beforeEach(() => {
+    clearReplyCache();
+    resetCommandsSyncSignature();
+    vi.unstubAllGlobals();
+    process.env.TELEGRAM_BOT_TOKEN = "TOKEN";
+    process.env.ADMIN_CHAT_ID = "1";
+    process.env.TELEGRAM_WEBHOOK_SECRET = "SECRET";
+    process.env.SUPABASE_URL = "http://localhost";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "key";
+  });
+
+  afterEach(() => {
+    process.env = { ...OLD_ENV };
+    __mockAdmin.current = null;
+  });
+
+  function makeReq(body: any, secretOk = true) {
+    const { createHash } = require("crypto");
+    const derived = createHash("sha256").update("SECRET").digest("hex");
+    return new Request("http://localhost/api/public/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": secretOk ? derived : "wrong",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  const handler = (WebhookRoute as any).options.server.handlers.POST;
+
+  it("triggers setMyCommands on incoming update (auto-sync)", async () => {
+    const calls = installFetchSpy();
+    __mockAdmin.current = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+
+    await handler({
+      request: makeReq({
+        update_id: 1,
+        message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: 1, text: "hello" },
+      }),
+    });
+    // Flush fire-and-forget microtasks.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.some((c) => c.method === "setMyCommands")).toBe(true);
+  });
+
+  it("dedups auto-sync across multiple sequential webhook updates", async () => {
+    const calls = installFetchSpy();
+    __mockAdmin.current = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+
+    for (let i = 0; i < 3; i++) {
+      await handler({
+        request: makeReq({
+          update_id: 100 + i,
+          message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: i, text: "x" },
+        }),
+      });
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+  });
+
+  it("does not trigger auto-sync when the secret token is invalid", async () => {
+    const calls = installFetchSpy();
+    __mockAdmin.current = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+
+    const res = await handler({
+      request: makeReq({ update_id: 1, message: { chat: { id: 1, type: "private" }, message_id: 1, text: "x" } }, false),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(res.status).toBe(401);
+    expect(calls.some((c) => c.method === "setMyCommands")).toBe(false);
   });
 });
 

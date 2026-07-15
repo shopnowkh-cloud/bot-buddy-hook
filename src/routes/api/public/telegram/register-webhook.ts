@@ -40,11 +40,35 @@ export const Route = createFileRoute("/api/public/telegram/register-webhook")({
         });
         const tgJson = await tgRes.json().catch(() => ({}));
 
+        // Auto-register the bot's slash-command menu (setMyCommands) so
+        // clients see /keyword suggestions right after the webhook is set.
+        let commandsSync: any = { ok: false, skipped: true };
+        try {
+          const { createClient } = await import("@supabase/supabase-js");
+          const { syncBotCommands, resetCommandsSyncSignature, clearReplyCache } =
+            await import("./webhook");
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            { auth: { persistSession: false, autoRefreshToken: false } },
+          );
+          clearReplyCache();
+          resetCommandsSyncSignature();
+          await syncBotCommands(token, supabase);
+          commandsSync = { ok: true };
+        } catch (err: any) {
+          commandsSync = { ok: false, error: String(err?.message ?? err) };
+        }
+
         const infoRes = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
         const infoJson = await infoRes.json().catch(() => ({}));
 
         return new Response(
-          JSON.stringify({ ok: tgRes.ok, webhookUrl, setWebhook: tgJson, info: infoJson }, null, 2),
+          JSON.stringify(
+            { ok: tgRes.ok, webhookUrl, setWebhook: tgJson, setMyCommands: commandsSync, info: infoJson },
+            null,
+            2,
+          ),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       },

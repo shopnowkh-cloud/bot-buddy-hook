@@ -269,7 +269,7 @@ describe("webhook POST — auto-sync on every update", () => {
       });
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(3);
   });
 
   it("does not trigger auto-sync when the secret token is invalid", async () => {

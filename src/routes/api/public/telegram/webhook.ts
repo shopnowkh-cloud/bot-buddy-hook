@@ -1232,19 +1232,20 @@ export async function handleMessage(token: string, adminId: number, supabase: an
   }
 
 
-  // Fallback: admin tests a keyword when no state is active
+  // Fallback: admin tests a keyword via slash command (/cmd) when no state is active
   if (!s.state && text) {
-    const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
-    if (match) {
-      // Parallelize delete + send; re-attach MAIN_KEYBOARD so it persists
-      // even after the admin clears chat history.
-      await Promise.all([
-        tgRequest(token, "deleteMessage", {
-          chat_id: chatId,
-          message_id: msg.message_id,
-        }).catch(() => {}),
-        sendReplies(token, supabase, chatId, match.content, 0, MAIN_KEYBOARD),
-      ]);
+    const cmd = parseSlashCommand(text);
+    if (cmd) {
+      const hit = await resolveCommandKeyword(supabase, cmd);
+      if (hit) {
+        await Promise.all([
+          tgRequest(token, "deleteMessage", {
+            chat_id: chatId,
+            message_id: msg.message_id,
+          }).catch(() => {}),
+          sendReplies(token, supabase, chatId, hit.entry.content, 0, MAIN_KEYBOARD),
+        ]);
+      }
     }
   }
 }

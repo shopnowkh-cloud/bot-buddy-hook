@@ -153,6 +153,118 @@ describe("syncBotCommands", () => {
     await syncBotCommands("TOKEN", supabase);
     expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
   });
+
+  it("dedups concurrent parallel calls — only one setMyCommands is issued", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    await Promise.all([
+      syncBotCommands("TOKEN", supabase),
+      syncBotCommands("TOKEN", supabase),
+      syncBotCommands("TOKEN", supabase),
+    ]);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+  });
+
+  it("re-syncs after resetCommandsSyncSignature() (e.g. keyword mutation)", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    await syncBotCommands("TOKEN", supabase);
+    resetCommandsSyncSignature();
+    clearReplyCache();
+    await syncBotCommands("TOKEN", supabase);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(2);
+  });
+
+  it("no-ops when token is empty", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    await syncBotCommands("", supabase);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook POST — auto-sync on every incoming update
+// ---------------------------------------------------------------------------
+
+describe("webhook POST — auto-sync on every update", () => {
+  const OLD_ENV = { ...process.env };
+
+  beforeEach(() => {
+    clearReplyCache();
+    resetCommandsSyncSignature();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    process.env.TELEGRAM_BOT_TOKEN = "TOKEN";
+    process.env.ADMIN_CHAT_ID = "1";
+    process.env.TELEGRAM_WEBHOOK_SECRET = "SECRET";
+    process.env.SUPABASE_URL = "http://localhost";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "key";
+  });
+
+  afterEach(() => {
+    process.env = { ...OLD_ENV };
+  });
+
+  async function loadRouteWithSupabase(supabase: any) {
+    vi.doMock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: supabase }));
+    const mod = await import("./webhook");
+    mod.clearReplyCache();
+    mod.resetCommandsSyncSignature();
+    return mod;
+  }
+
+  function makeReq(body: any, secretOk = true) {
+    const { createHash } = require("crypto");
+    const derived = createHash("sha256").update(`telegram-webhook:SECRET`).digest("base64url");
+    return new Request("http://localhost/api/public/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": secretOk ? derived : "wrong",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("triggers setMyCommands on incoming update (auto-sync)", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    const mod = await loadRouteWithSupabase(supabase);
+    const handler = (mod as any).Route.options.server.handlers.POST;
+
+    await handler({
+      request: makeReq({ update_id: 1, message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: 1, text: "hello" } }),
+    });
+    // Let fire-and-forget microtasks flush.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls.some((c) => c.method === "setMyCommands")).toBe(true);
+  });
+
+  it("dedups auto-sync across multiple sequential webhook updates", async () => {
+    const calls = installFetchSpy();
+    const supabase = makeSupabase({
+      replies: [{ keyword: "hi", content: { type: "text", content: "y" }, delete_after_seconds: null }],
+    });
+    const mod = await loadRouteWithSupabase(supabase);
+    const handler = (mod as any).Route.options.server.handlers.POST;
+
+    for (let i = 0; i < 3; i++) {
+      await handler({
+        request: makeReq({ update_id: i, message: { chat: { id: 42, type: "private" }, from: { id: 999 }, message_id: i, text: "x" } }),
+      });
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

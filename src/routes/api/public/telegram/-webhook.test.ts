@@ -139,8 +139,8 @@ describe("syncBotCommands", () => {
     expect(set).toBeDefined();
     const cmds = set!.body.commands as Array<{ command: string; description: string }>;
     expect(cmds).toEqual([
-      { command: "qr_code", description: "QR Code" },
-      { command: "hi", description: "hi" },
+      { command: "1", description: "QR Code" },
+      { command: "2", description: "hi" },
     ]);
   });
 
@@ -175,7 +175,7 @@ describe("handleUserMessage — slash commands", () => {
       chat: { id: -100, type: "group" },
       from: { id: 10 },
       message_id: 1,
-      text: "/hi",
+      text: "/1",
     });
     const sent = calls.find((c) => c.method === "sendMessage" && c.body.text === "hello");
     expect(sent).toBeDefined();
@@ -194,7 +194,7 @@ describe("handleUserMessage — slash commands", () => {
       chat: { id: -100, type: "group" },
       from: { id: 10 },
       message_id: 2,
-      text: "/hi@my_bot",
+      text: "/1@my_bot",
     });
     expect(calls.some((c) => c.method === "sendMessage" && c.body.text === "hello")).toBe(true);
   });
@@ -242,7 +242,7 @@ describe("handleUserMessage — slash commands", () => {
       text: "/start",
     });
     const listMsg = calls.find(
-      (c) => c.method === "sendMessage" && String(c.body.text ?? "").includes("/hi"),
+      (c) => c.method === "sendMessage" && String(c.body.text ?? "").includes("/1"),
     );
     expect(listMsg).toBeDefined();
     expect(listMsg!.body.reply_markup).toBeUndefined();
@@ -269,7 +269,7 @@ describe("handleMessage — admin slash command fallback", () => {
       chat: { id: 1, type: "private" },
       from: { id: 1 },
       message_id: 5,
-      text: "/ping",
+      text: "/1",
     });
     const sent = calls.find((c) => c.method === "sendMessage" && c.body.text === "pong");
     expect(sent).toBeDefined();
@@ -314,7 +314,7 @@ describe("album flow via slash command — media_group_id grouping", () => {
     await handleUserMessage("TOKEN", supabase, {
       chat: { id: 555, type: "group" },
       message_id: 1,
-      text: "/album",
+      text: "/1",
     });
     const copyMessagesCalls = calls.filter((c) => c.method === "copyMessages");
     expect(copyMessagesCalls.length).toBe(1);

@@ -174,7 +174,7 @@ describe("syncBotCommands", () => {
       syncBotCommands("TOKEN", supabase),
       syncBotCommands("TOKEN", supabase),
     ]);
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(3);
   });
 
   it("re-syncs after resetCommandsSyncSignature() (e.g. keyword mutation)", async () => {

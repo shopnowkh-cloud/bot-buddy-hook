@@ -1279,6 +1279,14 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("Bad request", { status: 400 });
         }
 
+        // Auto-sync slash-commands on every incoming update (deduped by signature — cheap no-op when unchanged).
+        (async () => {
+          try {
+            const { supabaseAdmin } = await getAdminClient();
+            await syncBotCommands(token, supabaseAdmin);
+          } catch {}
+        })();
+
         const msg = update.message ?? update.edited_message;
 
         // ---- FAST PATH: group keyword match with single reply ----

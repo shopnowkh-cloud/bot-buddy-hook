@@ -185,21 +185,27 @@ async function tgRequest(token: string, method: string, body: TgRequestBody) {
 // ---------------------------------------------------------------------------
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
-const MINIAPP_BASE_URL =
-  process.env.TELEGRAM_MINIAPP_URL ||
-  "https://bot-buddy-hook.lovable.app/miniapp";
+function getMiniAppUrl() {
+  // Env is bound at request time in the server runtime, so never read this at
+  // module scope. Set TELEGRAM_MINIAPP_URL to the Cloudflare Worker URL.
+  return process.env.TELEGRAM_MINIAPP_URL || "https://bot-buddy-hook.lovable.app/miniapp";
+}
 
-export const MAIN_KEYBOARD = {
-  keyboard: [
-    [{ text: "🧩 បើក Mini App", web_app: { url: MINIAPP_BASE_URL } }],
-    ["បន្ថែមពាក្យថ្មី"],
-    ["បញ្ជីពាក្យ កែប្រែ&លុប"],
-    ["⏱ កំណត់ Timer លុបសារ"],
-    ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-};
+export function mainKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "🧩 បើក Mini App", web_app: { url: getMiniAppUrl() } }],
+      ["បន្ថែមពាក្យថ្មី"],
+      ["បញ្ជីពាក្យ កែប្រែ&លុប"],
+      ["⏱ កំណត់ Timer លុបសារ"],
+      ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+export const MAIN_KEYBOARD = mainKeyboard();
 
 const SCHED_REPEAT_KEYBOARD = {
   keyboard: [["🔂 មួយដង", "🔁 រាល់ថ្ងៃ"], ["❌ បោះបង់"]],
@@ -766,7 +772,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: "👨‍💻 ផ្ទាំងគ្រប់គ្រង Auto-Reply Bot\n\nសួស្ដីម្ចាស់គណនី សូមជ្រើសរើសមុខងារខាងក្រោម៖",
-      reply_markup: MAIN_KEYBOARD,
+      reply_markup: mainKeyboard(),
     });
     return;
   }
@@ -797,7 +803,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
           seconds === 0
             ? "✅ បានបិទ Timer — សារលទ្ធផលនឹងមិនត្រូវបានលុបទេ។"
             : `✅ បានកំណត់ Timer — សារលទ្ធផលនឹងត្រូវបានលុបបន្ទាប់ពី ${formatDelay(seconds)}។`,
-        reply_markup: MAIN_KEYBOARD,
+        reply_markup: mainKeyboard(),
       });
       return;
     }
@@ -848,7 +854,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: "📭 មិនទាន់មានពាក្យឆ្លើយតបណាមួយទេ។ សូមបន្ថែមពាក្យជាមុនសិន។",
-        reply_markup: MAIN_KEYBOARD,
+        reply_markup: mainKeyboard(),
       });
       return;
     }
@@ -881,7 +887,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: "📭 មិនទាន់មាន Group ណាមួយដែល bot នៅក្នុងទេ។\n\n👉 សូមបន្ថែម bot ទៅក្នុង group ហើយផ្ញើសារណាមួយក្នុង group មុនសិន ដើម្បីឲ្យ bot ស្គាល់ group នោះ។",
-        reply_markup: MAIN_KEYBOARD,
+        reply_markup: mainKeyboard(),
       });
       return;
     }
@@ -979,7 +985,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `✅ បានកំណត់!\n📅 ${y}-${mo}-${d} ${hh}:${mm} (ភ្នំពេញ)\n📨 ពាក្យ [${s.pending_keyword}] → ${gtitle ?? s.selected_keyword}\n🔂 មួយដង`,
-      reply_markup: MAIN_KEYBOARD,
+      reply_markup: mainKeyboard(),
     });
     return;
   }
@@ -1008,7 +1014,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `✅ បានកំណត់!\n🕒 រាល់ថ្ងៃ ម៉ោង ${m[1]}:${m[2]} (ភ្នំពេញ)\n📨 ពាក្យ [${s.pending_keyword}] → ${gtitle ?? s.selected_keyword}`,
-      reply_markup: MAIN_KEYBOARD,
+      reply_markup: mainKeyboard(),
     });
     return;
   }
@@ -1024,7 +1030,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: "📭 មិនទាន់មាន Schedule ណាមួយទេ។",
-        reply_markup: MAIN_KEYBOARD,
+        reply_markup: mainKeyboard(),
       });
       return;
     }
@@ -1037,7 +1043,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `📋 បញ្ជី Schedule (${rows.length})\n\n${lines.join("\n\n")}`,
-      reply_markup: MAIN_KEYBOARD,
+      reply_markup: mainKeyboard(),
     });
     return;
   }
@@ -1048,7 +1054,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: `🗑 បានលុប Schedule #${id}`,
-      reply_markup: MAIN_KEYBOARD,
+      reply_markup: mainKeyboard(),
     });
     return;
   }
@@ -1071,7 +1077,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: "📭 មិនទាន់មានពាក្យណាមួយទេ។ សូមបន្ថែមពាក្យថ្មីជាមុនសិន។",
-        reply_markup: MAIN_KEYBOARD,
+        reply_markup: mainKeyboard(),
       });
       return;
     }
@@ -1159,7 +1165,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
         await tgRequest(token, "sendMessage", {
           chat_id: chatId,
           text: `🗑 បានលុបពាក្យ [${kw}] រួចរាល់។\n\n📭 មិនទាន់មានពាក្យណាមួយទេ។`,
-          reply_markup: MAIN_KEYBOARD,
+          reply_markup: mainKeyboard(),
         });
       } else {
         await saveState(supabase, chatId, "browsing_list", null, null);
@@ -1216,7 +1222,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       await tgRequest(token, "sendMessage", {
         chat_id: chatId,
         text: `🎉 រៀបចំរួចរាល់!\nពាក្យ [${kw}] នឹងបង្ហាញលទ្ធផល (${collected.length} សារ) ៖`,
-        reply_markup: MAIN_KEYBOARD,
+        reply_markup: mainKeyboard(),
       });
       await sendReplies(token, supabase, chatId, finalContent, 0);
       return;
@@ -1254,7 +1260,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
             chat_id: chatId,
             message_id: msg.message_id,
           }).catch(() => {}),
-          sendReplies(token, supabase, chatId, hit.entry.content, 0, MAIN_KEYBOARD),
+          sendReplies(token, supabase, chatId, hit.entry.content, 0, mainKeyboard()),
         ]);
       }
     }

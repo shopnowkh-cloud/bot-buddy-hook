@@ -1,4 +1,3 @@
-import { createFileRoute } from "@tanstack/react-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,17 +44,9 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/miniapp")({
-  head: () => ({
-    meta: [
-      { title: "Bot Admin Dashboard" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#f4f6f8" },
-    ],
-    scripts: [{ src: "https://telegram.org/js/telegram-web-app.js" }],
-  }),
-  component: MiniApp,
-});
+export default function App() {
+  return <MiniApp />;
+}
 
 type ContentItem = {
   type: "text" | "photo" | "video" | "audio" | "voice" | "document" | "animation" | "sticker" | "copy";

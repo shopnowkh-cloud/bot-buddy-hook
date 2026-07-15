@@ -223,7 +223,7 @@ describe("webhook POST — auto-sync on every update", () => {
 
   function makeReq(body: any, secretOk = true) {
     const { createHash } = require("crypto");
-    const derived = createHash("sha256").update(`telegram-webhook:SECRET`).digest("base64url");
+    const derived = createHash("sha256").update("SECRET").digest("hex");
     return new Request("http://localhost/api/public/telegram/webhook", {
       method: "POST",
       headers: {

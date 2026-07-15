@@ -160,7 +160,8 @@ describe("syncBotCommands", () => {
     });
     await syncBotCommands("TOKEN", supabase);
     await syncBotCommands("TOKEN", supabase);
-    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(1);
+    // 3 scopes registered per sync (default, all_private_chats, all_group_chats).
+    expect(calls.filter((c) => c.method === "setMyCommands").length).toBe(3);
   });
 
   it("dedups concurrent parallel calls — only one setMyCommands is issued", async () => {

@@ -13,6 +13,20 @@ function sb() {
   return _supabase;
 }
 
+/** Refresh cache + re-register Telegram slash-commands (setMyCommands). */
+async function invalidateAndSyncCommands() {
+  try {
+    const { clearReplyCache, resetCommandsSyncSignature, syncBotCommands } = await import(
+      "@/routes/api/public/telegram/webhook"
+    );
+    clearReplyCache();
+    resetCommandsSyncSignature();
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (token) syncBotCommands(token, sb()).catch(() => {});
+  } catch {}
+}
+
+
 const ContentItem = z.object({
   type: z.enum(["text", "photo", "video", "audio", "voice", "document", "animation", "sticker"]),
   text: z.string().max(4096).optional(),

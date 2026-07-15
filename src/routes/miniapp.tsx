@@ -511,7 +511,7 @@ function KeywordsPanel() {
         {replies.map((r, i) => (
           <div key={r.keyword} className="tg-card p-3 flex items-center gap-3">
             <div className="h-11 w-11 shrink-0 rounded-xl bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] grid place-items-center font-bold text-sm">
-              {i + 1}
+              /{i + 1}
             </div>
             <button onClick={() => setEditing(r)} className="min-w-0 flex-1 text-left active:opacity-70">
               <p className="font-semibold truncate">{r.keyword}</p>
@@ -538,6 +538,7 @@ function KeywordsPanel() {
           </div>
         ))}
       </div>
+
     </div>
   );
 }

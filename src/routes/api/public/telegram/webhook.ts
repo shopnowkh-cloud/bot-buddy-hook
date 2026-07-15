@@ -1200,6 +1200,9 @@ export async function handleMessage(token: string, adminId: number, supabase: an
           { onConflict: "keyword" },
         );
       clearReplyCache();
+      resetCommandsSyncSignature();
+      syncBotCommands(token, supabase).catch(() => {});
+
 
       await saveState(supabase, chatId, null, null, null, []);
       await tgRequest(token, "sendMessage", {

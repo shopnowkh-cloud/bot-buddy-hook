@@ -16,6 +16,7 @@ import { Route as ApiPublicTelegramSweepSchedulesRouteImport } from './routes/ap
 import { Route as ApiPublicTelegramSweepDeletionsRouteImport } from './routes/api/public/telegram/sweep-deletions'
 import { Route as ApiPublicTelegramRegisterWebhookRouteImport } from './routes/api/public/telegram/register-webhook'
 import { Route as ApiPublicMiniappApiRouteImport } from './routes/api/public/miniapp/api'
+import { Route as ApiPublicBotBridgeRouteImport } from './routes/api/public/bot/bridge'
 
 const MiniappRoute = MiniappRouteImport.update({
   id: '/miniapp',
@@ -56,10 +57,16 @@ const ApiPublicMiniappApiRoute = ApiPublicMiniappApiRouteImport.update({
   path: '/api/public/miniapp/api',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicBotBridgeRoute = ApiPublicBotBridgeRouteImport.update({
+  id: '/api/public/bot/bridge',
+  path: '/api/public/bot/bridge',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/miniapp': typeof MiniappRoute
+  '/api/public/bot/bridge': typeof ApiPublicBotBridgeRoute
   '/api/public/miniapp/api': typeof ApiPublicMiniappApiRoute
   '/api/public/telegram/register-webhook': typeof ApiPublicTelegramRegisterWebhookRoute
   '/api/public/telegram/sweep-deletions': typeof ApiPublicTelegramSweepDeletionsRoute
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/miniapp': typeof MiniappRoute
+  '/api/public/bot/bridge': typeof ApiPublicBotBridgeRoute
   '/api/public/miniapp/api': typeof ApiPublicMiniappApiRoute
   '/api/public/telegram/register-webhook': typeof ApiPublicTelegramRegisterWebhookRoute
   '/api/public/telegram/sweep-deletions': typeof ApiPublicTelegramSweepDeletionsRoute
@@ -79,6 +87,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/miniapp': typeof MiniappRoute
+  '/api/public/bot/bridge': typeof ApiPublicBotBridgeRoute
   '/api/public/miniapp/api': typeof ApiPublicMiniappApiRoute
   '/api/public/telegram/register-webhook': typeof ApiPublicTelegramRegisterWebhookRoute
   '/api/public/telegram/sweep-deletions': typeof ApiPublicTelegramSweepDeletionsRoute
@@ -90,6 +99,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/miniapp'
+    | '/api/public/bot/bridge'
     | '/api/public/miniapp/api'
     | '/api/public/telegram/register-webhook'
     | '/api/public/telegram/sweep-deletions'
@@ -99,6 +109,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/miniapp'
+    | '/api/public/bot/bridge'
     | '/api/public/miniapp/api'
     | '/api/public/telegram/register-webhook'
     | '/api/public/telegram/sweep-deletions'
@@ -108,6 +119,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/miniapp'
+    | '/api/public/bot/bridge'
     | '/api/public/miniapp/api'
     | '/api/public/telegram/register-webhook'
     | '/api/public/telegram/sweep-deletions'
@@ -118,6 +130,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   MiniappRoute: typeof MiniappRoute
+  ApiPublicBotBridgeRoute: typeof ApiPublicBotBridgeRoute
   ApiPublicMiniappApiRoute: typeof ApiPublicMiniappApiRoute
   ApiPublicTelegramRegisterWebhookRoute: typeof ApiPublicTelegramRegisterWebhookRoute
   ApiPublicTelegramSweepDeletionsRoute: typeof ApiPublicTelegramSweepDeletionsRoute
@@ -176,12 +189,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMiniappApiRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/bot/bridge': {
+      id: '/api/public/bot/bridge'
+      path: '/api/public/bot/bridge'
+      fullPath: '/api/public/bot/bridge'
+      preLoaderRoute: typeof ApiPublicBotBridgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   MiniappRoute: MiniappRoute,
+  ApiPublicBotBridgeRoute: ApiPublicBotBridgeRoute,
   ApiPublicMiniappApiRoute: ApiPublicMiniappApiRoute,
   ApiPublicTelegramRegisterWebhookRoute: ApiPublicTelegramRegisterWebhookRoute,
   ApiPublicTelegramSweepDeletionsRoute: ApiPublicTelegramSweepDeletionsRoute,

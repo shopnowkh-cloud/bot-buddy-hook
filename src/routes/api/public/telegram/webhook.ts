@@ -635,6 +635,35 @@ async function listKeywords(supabase: any): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Slash-command parsing
+// ---------------------------------------------------------------------------
+// A slash command message from Telegram looks like:
+//   "/qr" or "/qr@my_bot" or "/qr some args"
+// We strip the leading '/', drop the "@botname" suffix, and lowercase.
+export function parseSlashCommand(text: string | undefined): string | null {
+  if (!text) return null;
+  const t = text.trim();
+  if (!t.startsWith("/")) return null;
+  const first = t.split(/\s+/, 1)[0].slice(1);
+  const at = first.indexOf("@");
+  const raw = at >= 0 ? first.slice(0, at) : first;
+  const cmd = raw.toLowerCase();
+  return cmd || null;
+}
+
+async function resolveCommandKeyword(
+  supabase: any,
+  cmd: string,
+): Promise<{ keyword: string; entry: ReplyCacheEntry } | null> {
+  const cache = await loadReplyCache(supabase);
+  const kw = cache.commands.get(cmd);
+  if (!kw) return null;
+  const entry = cache.replies.get(kw.toLowerCase());
+  if (!entry) return null;
+  return { keyword: kw, entry };
+}
+
+// ---------------------------------------------------------------------------
 // Main message handler — mirrors handleMessage / handleUserMessage in bot.js
 // ---------------------------------------------------------------------------
 export async function handleUserMessage(token: string, supabase: any, msg: any) {
@@ -662,92 +691,56 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
         .then(() => {}, () => groupTrackCache.delete(chatId));
     }
 
-    // Keyword keyboard uses `is_persistent: true` (Telegram Bot API field on
-    // ReplyKeyboardMarkup) so it stays docked for every user who has seen it.
-    // We combine it with resend-on-every-message logic: every group message
-    // re-attaches the persistent keyboard, so new members and cleared clients
-    // pick it up immediately.
-    const groupRows = await listKeywordRows(supabase);
-    const groupKb = buildKeywordKeyboard(groupRows);
-
+    // Bot added to group → make sure the command menu is up to date.
     const botAdded = Array.isArray(msg.new_chat_members) &&
       msg.new_chat_members.some((m: any) => m?.is_bot);
-    const isStartCmd = text === "/start" || text?.startsWith("/start@");
-
-    if (isStartCmd) {
-      // Clean the "/start" command out of the group history regardless of who
-      // sent it; the persistent keyboard is re-attached below via the normal
-      // resend-on-every-message path.
-      tgRequest(token, "deleteMessage", {
-        chat_id: chatId,
-        message_id: msg.message_id,
-      }).catch(() => {});
+    if (botAdded) {
+      syncBotCommands(token, supabase).catch(() => {});
     }
 
-    if (text) {
-      const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
-      if (match) {
-        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, groupKb);
+    const cmd = parseSlashCommand(text);
+    if (cmd) {
+      if (cmd === "start" || cmd.startsWith("start")) {
+        // Ensure the slash-command menu is populated for this bot.
+        syncBotCommands(token, supabase).catch(() => {});
         return;
       }
-    }
-
-    // No keyword match → resend the persistent keyboard so it always reappears.
-    // Send a tiny carrier message and delete it right after; Telegram keeps the
-    // is_persistent keyboard docked for users who received it.
-    if (groupKb && (botAdded || isStartCmd || text)) {
-      const res = await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "⌨️",
-        reply_markup: groupKb,
-      });
-      const carrierId = res?.result?.message_id;
-      if (carrierId) {
-        tgRequest(token, "deleteMessage", {
-          chat_id: chatId,
-          message_id: carrierId,
-        }).catch(() => {});
+      const hit = await resolveCommandKeyword(supabase, cmd);
+      if (hit) {
+        await deleteAndSendMatch(token, supabase, chatId, msg.message_id, hit.entry);
       }
     }
     return;
   }
 
-
-  const isStart = text === "/start" || text?.startsWith("/start@");
-
-  // Private chat (non-admin): show keyword keyboard on every interaction so
-  // it always reappears even after the user clears chat history.
-  const keys = await listKeywords(supabase);
-  const kb = buildKeywordKeyboard(await listKeywordRows(supabase));
-
-
-  if (isStart) {
+  // ---------- Private chat (non-admin user) ----------
+  const cmd = parseSlashCommand(text);
+  if (cmd === "start") {
+    await syncBotCommands(token, supabase).catch(() => {});
+    const keys = await listKeywords(supabase);
     if (keys.length === 0) {
       await tgRequest(token, "sendMessage", { chat_id: chatId, text: "សួស្តី! 👋" });
       return;
     }
+    const cache = await loadReplyCache(supabase);
+    const lines = [...cache.commands.entries()].map(
+      ([c, kw]) => `/${c} — ${kw}`,
+    );
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
-      text: `📋 បញ្ជីពាក្យឆ្លើយតប (${keys.length} ពាក្យ)\n\nសូមជ្រើសរើសពាក្យ៖`,
-      reply_markup: kb,
+      text: `📋 បញ្ជីពាក្យបញ្ជា (${lines.length})\n\n${lines.join("\n")}`,
     });
     return;
   }
 
-  if (text) {
-    const match = await getReplyByKeyword(supabase, text.trim().toLowerCase());
-    if (match) {
-      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, match, kb);
-    } else if (kb) {
-      // No match: still re-show keyboard so user can pick a valid keyword
-      await tgRequest(token, "sendMessage", {
-        chat_id: chatId,
-        text: "សូមជ្រើសរើសពាក្យពីខាងក្រោម៖",
-        reply_markup: kb,
-      });
+  if (cmd) {
+    const hit = await resolveCommandKeyword(supabase, cmd);
+    if (hit) {
+      await deleteAndSendMatch(token, supabase, chatId, msg.message_id, hit.entry);
     }
   }
 }
+
 
 export async function handleMessage(token: string, adminId: number, supabase: any, msg: any) {
   const chatId = msg.chat.id;

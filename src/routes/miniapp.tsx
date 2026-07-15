@@ -497,9 +497,10 @@ function KeywordsPanel() {
           onClick={() => { hapticImpact("medium"); setReordering(true); }}
           className="w-full h-12 rounded-2xl bg-[var(--tg-section-2)] font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98]"
         >
-          <ArrowUpDown className="h-5 w-5" /> ↕️ តម្រៀបទីតាំង
+          <ArrowUpDown className="h-5 w-5" /> ប្តូរលេខរៀង /1 /2 /3…
         </button>
       )}
+
       {q.isLoading && <p className="tg-hint text-sm text-center py-6">កំពុងផ្ទុក...</p>}
       {!q.isLoading && replies.length === 0 && (
         <div className="tg-card p-8 text-center">

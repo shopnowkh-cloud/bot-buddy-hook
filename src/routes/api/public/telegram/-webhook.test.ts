@@ -4,6 +4,14 @@ vi.mock("@/lib/admin-config.server", () => ({
   isAdminUserId: vi.fn(async (id: number | undefined | null) => Number(id) === 1),
 }));
 
+// Shared holder so tests can swap the mocked supabaseAdmin per-case.
+const __mockAdmin: { current: any } = { current: null };
+vi.mock("@/integrations/supabase/client.server", () => ({
+  get supabaseAdmin() {
+    return __mockAdmin.current;
+  },
+}));
+
 import {
   handleUserMessage,
   handleMessage,
@@ -12,6 +20,7 @@ import {
   parseSlashCommand,
   syncBotCommands,
   resetCommandsSyncSignature,
+  Route as WebhookRoute,
 } from "./webhook";
 
 // ---------------------------------------------------------------------------

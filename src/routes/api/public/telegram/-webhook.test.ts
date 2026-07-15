@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("@/lib/admin-config.server", () => ({
   isAdminUserId: vi.fn(async (id: number | undefined | null) => Number(id) === 1),

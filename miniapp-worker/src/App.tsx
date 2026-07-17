@@ -350,6 +350,7 @@ function MiniApp() {
           {tab === "stats" && <StatsPanel onGo={setTab} />}
           {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
+          {tab === "groups" && <GroupsPanel />}
           {tab === "schedule" && <SchedulePanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}

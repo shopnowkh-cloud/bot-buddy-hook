@@ -64,6 +64,22 @@ function isDuplicateUpdate(id: number | undefined): boolean {
   return false;
 }
 
+// ---- Analytics: log every matched keyword hit (fire-and-forget) ----
+export function logUsage(supabase: any, keyword: string, msg: any) {
+  try {
+    const row = {
+      keyword,
+      chat_id: msg?.chat?.id,
+      chat_type: msg?.chat?.type ?? null,
+      chat_title: msg?.chat?.title ?? null,
+      user_id: msg?.from?.id ?? null,
+      username: msg?.from?.username ?? null,
+    };
+    if (!row.chat_id) return;
+    supabase.from("usage_logs").insert(row).then(() => {}, () => {});
+  } catch {}
+}
+
 export function clearReplyCache() {
   replyCache = null;
   replyCachePromise = null;

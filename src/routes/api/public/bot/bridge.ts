@@ -128,6 +128,14 @@ const RequestSchema = z.discriminatedUnion("action", [
     keyword: z.string().min(1).max(255),
     chat_ids: z.array(z.number().int()).min(1).max(500).optional(),
   }),
+  z.object({
+    action: z.literal("list_updates"),
+    limit: z.number().int().min(1).max(200).optional(),
+    chat_id: z.number().int().optional(),
+    update_type: z.string().max(64).optional(),
+  }),
+  z.object({ action: z.literal("delete_update"), id: z.number().int().positive() }),
+  z.object({ action: z.literal("clear_updates") }),
 ]);
 
 function jerr(status: number, msg: string) {

@@ -1330,6 +1330,37 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           });
         }
 
+        // ---- Inbox: persist every update for admin review (fire-and-forget) ----
+        (async () => {
+          try {
+            const { supabaseAdmin } = await getAdminClient();
+            const kinds = [
+              "message", "edited_message", "channel_post", "edited_channel_post",
+              "callback_query", "inline_query", "chosen_inline_result",
+              "my_chat_member", "chat_member", "chat_join_request",
+              "poll", "poll_answer", "shipping_query", "pre_checkout_query",
+            ];
+            const kind = kinds.find((k) => update[k]) ?? "unknown";
+            const src = update[kind] ?? {};
+            const chat = src.chat ?? src.message?.chat ?? null;
+            const from = src.from ?? null;
+            let preview: string | null =
+              src.text ?? src.caption ?? src.data ?? src.query ?? null;
+            if (typeof preview === "string" && preview.length > 200) preview = preview.slice(0, 200);
+            await supabaseAdmin.from("telegram_updates").insert({
+              update_id: typeof update.update_id === "number" ? update.update_id : null,
+              update_type: kind,
+              chat_id: chat?.id ?? null,
+              chat_title: chat?.title ?? null,
+              chat_type: chat?.type ?? null,
+              user_id: from?.id ?? null,
+              username: from?.username ?? null,
+              text_preview: preview,
+              payload: update,
+            });
+          } catch {}
+        })();
+
         // Auto-sync slash-commands on every incoming update (deduped by signature — cheap no-op when unchanged).
         (async () => {
           try {

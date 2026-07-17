@@ -1,0 +1,1 @@
+UPDATE admin_settings SET access_tokens = ARRAY['ypLJlOf9jDzhLUXAdRyOj7HNT2C7p37o']::text[], updated_at = now() WHERE id = 1;

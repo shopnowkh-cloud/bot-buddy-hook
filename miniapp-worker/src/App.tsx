@@ -44,6 +44,7 @@ import {
   Users,
   Flame,
   CalendarClock,
+  Inbox,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -275,7 +276,7 @@ function fmtDelay(s: number | null | undefined): string {
   return `${s} វិនាទី`;
 }
 
-type Tab = "stats" | "analytics" | "keywords" | "groups" | "schedule" | "timer" | "pending" | "admins";
+type Tab = "stats" | "analytics" | "keywords" | "groups" | "inbox" | "schedule" | "timer" | "pending" | "admins";
 
 function MiniApp() {
   const [ready, setReady] = useState(false);
@@ -351,6 +352,7 @@ function MiniApp() {
           {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
           {tab === "groups" && <GroupsPanel />}
+          {tab === "inbox" && <InboxPanel />}
           {tab === "schedule" && <SchedulePanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}
@@ -360,11 +362,12 @@ function MiniApp() {
 
       {/* Bottom tab bar — large clear buttons */}
       <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
-        <div className="grid grid-cols-8 gap-0.5 px-1 py-2">
+        <div className="grid grid-cols-9 gap-0.5 px-1 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
           <TabBtn icon={<TrendingUp />} label="វិភាគ" active={tab === "analytics"} onClick={() => { hapticImpact(); setTab("analytics"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
           <TabBtn icon={<Users />} label="Groups" active={tab === "groups"} onClick={() => { hapticImpact(); setTab("groups"); }} />
+          <TabBtn icon={<Inbox />} label="Inbox" active={tab === "inbox"} onClick={() => { hapticImpact(); setTab("inbox"); }} />
           <TabBtn icon={<CalendarClock />} label="ពេល" active={tab === "schedule"} onClick={() => { hapticImpact(); setTab("schedule"); }} />
           <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
           <TabBtn icon={<ListChecks />} label="Pend" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />
@@ -1954,5 +1957,218 @@ function SendKeywordDialog({
       </div>
     </div>,
     document.body,
+  );
+}
+
+// ============================================================================
+// InboxPanel — full Telegram update inbox with timestamps and raw payload
+// ============================================================================
+type TgUpdate = {
+  id: number;
+  update_id: number | null;
+  update_type: string;
+  chat_id: number | null;
+  chat_title: string | null;
+  chat_type: string | null;
+  user_id: number | null;
+  username: string | null;
+  text_preview: string | null;
+  payload: any;
+  created_at: string;
+};
+
+function InboxPanel() {
+  const qc = useQueryClient();
+  const [filterType, setFilterType] = useState<string>("");
+  const [selected, setSelected] = useState<TgUpdate | null>(null);
+
+  const listQ = useQuery({
+    queryKey: ["tg_updates", filterType],
+    queryFn: () =>
+      callApi<{ updates: TgUpdate[] }>("list_updates", {
+        limit: 150,
+        ...(filterType ? { update_type: filterType } : {}),
+      }),
+    refetchInterval: 5000,
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => callApi("delete_update", { id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tg_updates"] }),
+  });
+  const clear = useMutation({
+    mutationFn: () => callApi("clear_updates"),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tg_updates"] }); toast.success("សម្អាតរួច"); },
+  });
+
+  const updates = listQ.data?.updates ?? [];
+  const types = useMemo(() => {
+    const s = new Set<string>();
+    updates.forEach((u) => s.add(u.update_type));
+    return [...s].sort();
+  }, [updates]);
+
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="flex items-center gap-2">
+        <SectionTitle>Inbox ({updates.length})</SectionTitle>
+        <div className="ml-auto flex gap-2">
+          <button
+            onClick={() => { hapticImpact("light"); listQ.refetch(); }}
+            className="h-9 w-9 rounded-lg bg-[var(--tg-section)] grid place-items-center"
+            aria-label="Refresh"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => { if (confirm("សម្អាតសារទាំងអស់?")) { hapticNotify("warning"); clear.mutate(); } }}
+            className="h-9 w-9 rounded-lg bg-red-500/10 text-red-600 grid place-items-center"
+            aria-label="Clear"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <button
+          onClick={() => setFilterType("")}
+          className={`px-3 h-9 rounded-full text-sm font-semibold whitespace-nowrap ${filterType === "" ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}
+        >ទាំងអស់</button>
+        {types.map((t) => (
+          <button
+            key={t}
+            onClick={() => setFilterType(t)}
+            className={`px-3 h-9 rounded-full text-sm font-semibold whitespace-nowrap ${filterType === t ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}
+          >{t}</button>
+        ))}
+      </div>
+
+      <div className="tg-card p-2 divide-y divide-white/10">
+        {listQ.isLoading ? (
+          <div className="p-4 tg-hint text-sm text-center">កំពុងផ្ទុក…</div>
+        ) : updates.length === 0 ? (
+          <div className="p-6 tg-hint text-sm text-center">មិនទាន់មានសារ / event</div>
+        ) : (
+          updates.map((u) => (
+            <button
+              key={u.id}
+              onClick={() => { hapticImpact("light"); setSelected(u); }}
+              className="w-full p-3 flex items-start gap-3 text-left active:bg-black/5"
+            >
+              <div className="h-10 w-10 rounded-xl grid place-items-center bg-[var(--tg-btn)]/15 text-[var(--tg-btn)] shrink-0">
+                <Inbox className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--tg-section)] font-semibold">{u.update_type}</span>
+                  {u.chat_type && <span className="text-xs tg-hint">{u.chat_type}</span>}
+                  <span className="ml-auto text-xs tg-hint">{formatTime(u.created_at)}</span>
+                </div>
+                <p className="font-semibold text-sm truncate mt-1">
+                  {u.chat_title || (u.username ? `@${u.username}` : `Chat ${u.chat_id ?? "?"}`)}
+                </p>
+                {u.text_preview && (
+                  <p className="tg-hint text-xs truncate mt-0.5">{u.text_preview}</p>
+                )}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+
+      {selected && (
+        <UpdateDetail
+          update={selected}
+          onClose={() => setSelected(null)}
+          onDelete={() => { del.mutate(selected.id); setSelected(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function formatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = (now.getTime() - d.getTime()) / 1000;
+    if (diff < 60) return `${Math.floor(diff)}វិ`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}ន`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}ម`;
+    return d.toLocaleString("km-KH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch { return iso; }
+}
+
+function UpdateDetail({
+  update,
+  onClose,
+  onDelete,
+}: {
+  update: TgUpdate;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
+  const payloadStr = useMemo(() => {
+    try { return JSON.stringify(update.payload, null, 2); } catch { return String(update.payload); }
+  }, [update]);
+
+  const copy = () => {
+    try {
+      navigator.clipboard?.writeText(payloadStr);
+      toast.success("Copied");
+      hapticNotify("success");
+    } catch {}
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] tg-app" style={{ background: "#f4f6f8", color: "#0f172a" }}>
+      <style>{tgStyles}</style>
+      <div className="h-full flex flex-col">
+        <header className="px-4 pt-4 pb-3 flex items-center gap-3 border-b border-black/5">
+          <button onClick={onClose} className="h-9 w-9 rounded-full bg-[var(--tg-section)] grid place-items-center">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-sm truncate">{update.update_type}</p>
+            <p className="tg-hint text-xs truncate">{new Date(update.created_at).toLocaleString("km-KH")}</p>
+          </div>
+          <button onClick={copy} className="h-9 px-3 rounded-lg bg-[var(--tg-section)] text-sm font-semibold">Copy</button>
+          <button onClick={onDelete} className="h-9 w-9 rounded-lg bg-red-500/10 text-red-600 grid place-items-center" aria-label="Delete">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="tg-card p-3 space-y-1 text-sm">
+            <Row label="Update ID" value={String(update.update_id ?? "—")} />
+            <Row label="Chat" value={update.chat_title || String(update.chat_id ?? "—")} />
+            <Row label="Chat ID" value={String(update.chat_id ?? "—")} />
+            <Row label="Chat type" value={update.chat_type ?? "—"} />
+            <Row label="From" value={update.username ? `@${update.username}` : String(update.user_id ?? "—")} />
+            <Row label="User ID" value={String(update.user_id ?? "—")} />
+            {update.text_preview && <Row label="Preview" value={update.text_preview} />}
+          </div>
+
+          <div>
+            <Label>Payload</Label>
+            <pre
+              className="mt-1 rounded-xl p-3 text-xs overflow-x-auto whitespace-pre"
+              style={{ background: "#0f172a", color: "#e2e8f0", maxHeight: "60vh" }}
+            >{payloadStr}</pre>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <span className="tg-hint w-24 shrink-0">{label}</span>
+      <span className="font-mono text-xs break-all">{value}</span>
+    </div>
   );
 }

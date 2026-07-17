@@ -173,6 +173,48 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_updates: {
+        Row: {
+          chat_id: number | null
+          chat_title: string | null
+          chat_type: string | null
+          created_at: string
+          id: number
+          payload: Json
+          text_preview: string | null
+          update_id: number | null
+          update_type: string
+          user_id: number | null
+          username: string | null
+        }
+        Insert: {
+          chat_id?: number | null
+          chat_title?: string | null
+          chat_type?: string | null
+          created_at?: string
+          id?: number
+          payload: Json
+          text_preview?: string | null
+          update_id?: number | null
+          update_type: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Update: {
+          chat_id?: number | null
+          chat_title?: string | null
+          chat_type?: string | null
+          created_at?: string
+          id?: number
+          payload?: Json
+          text_preview?: string | null
+          update_id?: number | null
+          update_type?: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Relationships: []
+      }
       tg_groups: {
         Row: {
           chat_id: number
@@ -257,6 +299,7 @@ export type Database = {
         }[]
       }
       get_overall_stats: { Args: never; Returns: Json }
+      prune_telegram_updates: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

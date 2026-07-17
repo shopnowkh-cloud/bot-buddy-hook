@@ -110,6 +110,24 @@ const RequestSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("delete_schedule"), id: z.number().int().positive() }),
   z.object({ action: z.literal("toggle_schedule"), id: z.number().int().positive(), enabled: z.boolean() }),
+  z.object({ action: z.literal("list_groups_all") }),
+  z.object({ action: z.literal("leave_group"), chat_id: z.number().int() }),
+  z.object({ action: z.literal("refresh_group"), chat_id: z.number().int() }),
+  z.object({
+    action: z.literal("send_to_group"),
+    chat_id: z.number().int(),
+    keyword: z.string().min(1).max(255),
+  }),
+  z.object({
+    action: z.literal("broadcast_text"),
+    text: z.string().min(1).max(4096),
+    chat_ids: z.array(z.number().int()).min(1).max(500).optional(),
+  }),
+  z.object({
+    action: z.literal("broadcast_keyword"),
+    keyword: z.string().min(1).max(255),
+    chat_ids: z.array(z.number().int()).min(1).max(500).optional(),
+  }),
 ]);
 
 function jerr(status: number, msg: string) {

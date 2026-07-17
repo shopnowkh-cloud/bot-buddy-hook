@@ -20,18 +20,28 @@ function safeEqual(a: string, b: string): boolean {
 
 type TgRequestBody = Record<string, unknown>;
 
-// Preload admin client module at isolate startup so first webhook call skips import cost
+// Preload admin client module at isolate startup so first webhook call skips import cost.
+// Also prewarm the reply cache so the group fast-path can serve the first request inline.
 let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null =
-  import("@/integrations/supabase/client.server").catch((e) => {
-    _adminClientPromise = null;
-    throw e;
-  }) as any;
+  import("@/integrations/supabase/client.server")
+    .then((mod) => {
+      // Fire-and-forget: warm the reply cache once the admin client is available.
+      try {
+        fetchReplyCache(mod.supabaseAdmin).catch(() => {});
+      } catch {}
+      return mod;
+    })
+    .catch((e) => {
+      _adminClientPromise = null;
+      throw e;
+    }) as any;
 function getAdminClient() {
   if (!_adminClientPromise) {
     _adminClientPromise = import("@/integrations/supabase/client.server");
   }
   return _adminClientPromise;
 }
+
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = {
@@ -1405,18 +1415,20 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         try {
           if (msg?.chat?.id && (msg.chat.type === "group" || msg.chat.type === "supergroup") && msg.text) {
             const { supabaseAdmin } = await getAdminClient();
-            const cache = replyCache; // sync peek; only take fast path when cache is hot
+            let cache = replyCache; // sync peek; only take fast path when cache is hot
+            if (!cache) {
+              // Cold isolate — warm cache in background so next call fast-paths.
+              fetchReplyCache(supabaseAdmin).catch(() => {});
+            }
             if (cache) {
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
               const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;
               if (match && !Array.isArray(match.content)) {
                 const chatId = msg.chat.id;
-                const effective = match.delete_after_seconds ?? cache.config;
                 logUsage(supabaseAdmin, kw!, msg);
 
-
-                // Fire-and-forget: delete user message + group tracking + schedule bot-message deletion
+                // Fire-and-forget: delete user message + group tracking
                 fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -1451,25 +1463,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
                 }
 
                 if (inline.method) {
-                  // Do NOT attach the keyword keyboard here — in groups it is
-                  // only (re)shown when an admin types /start. Since the
-                  // keyboard is persistent, it stays for every user that has
-                  // already seen it.
-
-                  // We can't get the sent message_id from an inline response,
-                  // so auto-delete for inline sends is best-effort skipped.
-                  if (effective > 0) {
-                    // Fallback to normal path so pending_deletions is recorded
-                  } else {
-                    return new Response(JSON.stringify(inline), {
-                      status: 200,
-                      headers: { "Content-Type": "application/json" },
-                    });
-                  }
+                  // Inline webhook response: Telegram sends the reply in the
+                  // same HTTP round-trip. Auto-delete of the bot's own reply
+                  // is skipped in fast path (no message_id returned inline).
+                  return new Response(JSON.stringify(inline), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                  });
                 }
               }
             }
           }
+
         } catch (err) {
           console.error("Telegram fast-path error:", err);
         }

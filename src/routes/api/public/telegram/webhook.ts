@@ -1415,18 +1415,20 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         try {
           if (msg?.chat?.id && (msg.chat.type === "group" || msg.chat.type === "supergroup") && msg.text) {
             const { supabaseAdmin } = await getAdminClient();
-            const cache = replyCache; // sync peek; only take fast path when cache is hot
+            let cache = replyCache; // sync peek; only take fast path when cache is hot
+            if (!cache) {
+              // Cold isolate — warm cache in background so next call fast-paths.
+              fetchReplyCache(supabaseAdmin).catch(() => {});
+            }
             if (cache) {
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
               const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;
               if (match && !Array.isArray(match.content)) {
                 const chatId = msg.chat.id;
-                const effective = match.delete_after_seconds ?? cache.config;
                 logUsage(supabaseAdmin, kw!, msg);
 
-
-                // Fire-and-forget: delete user message + group tracking + schedule bot-message deletion
+                // Fire-and-forget: delete user message + group tracking
                 fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -1461,25 +1463,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
                 }
 
                 if (inline.method) {
-                  // Do NOT attach the keyword keyboard here — in groups it is
-                  // only (re)shown when an admin types /start. Since the
-                  // keyboard is persistent, it stays for every user that has
-                  // already seen it.
-
-                  // We can't get the sent message_id from an inline response,
-                  // so auto-delete for inline sends is best-effort skipped.
-                  if (effective > 0) {
-                    // Fallback to normal path so pending_deletions is recorded
-                  } else {
-                    return new Response(JSON.stringify(inline), {
-                      status: 200,
-                      headers: { "Content-Type": "application/json" },
-                    });
-                  }
+                  // Inline webhook response: Telegram sends the reply in the
+                  // same HTTP round-trip. Auto-delete of the bot's own reply
+                  // is skipped in fast path (no message_id returned inline).
+                  return new Response(JSON.stringify(inline), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                  });
                 }
               }
             }
           }
+
         } catch (err) {
           console.error("Telegram fast-path error:", err);
         }

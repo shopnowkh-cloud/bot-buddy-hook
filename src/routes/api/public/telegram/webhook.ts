@@ -47,6 +47,7 @@ type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = {
   expiresAt: number;
   config: number;
+  fastPathEnabled: boolean;
   replies: Map<string, ReplyCacheEntry>;
   rowsOrder: string[][];
   /** slash-command (without leading '/') → keyword */
@@ -126,7 +127,7 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
   replyCachePromise = Promise.all([
     supabase.from("replies").select("keyword, content, delete_after_seconds, position, row_index").order("row_index").order("position").order("created_at"),
-    supabase.from("bot_config").select("delete_after_seconds").eq("id", 1).maybeSingle(),
+    supabase.from("bot_config").select("delete_after_seconds, fast_path_enabled").eq("id", 1).maybeSingle(),
   ]).then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
     const rowsMap = new Map<number, string[]>();
@@ -147,6 +148,7 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
     replyCache = {
       expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
       config: configResult.data?.delete_after_seconds ?? 0,
+      fastPathEnabled: configResult.data?.fast_path_enabled ?? true,
       replies,
       rowsOrder,
       commands: cmdToKw,
@@ -229,7 +231,7 @@ export const MAIN_KEYBOARD = {
   keyboard: [
     ["បន្ថែមពាក្យថ្មី"],
     ["បញ្ជីពាក្យ កែប្រែ&លុប"],
-    ["⏱ កំណត់ Timer លុបសារ"],
+    ["⏱ កំណត់ Timer លុបសារ", "⚡ Fast-Path"],
     ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
   ],
   resize_keyboard: true,
@@ -666,6 +668,18 @@ async function saveConfig(supabase: any, seconds: number) {
   clearReplyCache();
 }
 
+async function loadFastPathEnabled(supabase: any): Promise<boolean> {
+  const cache = await loadReplyCache(supabase);
+  return cache.fastPathEnabled;
+}
+
+async function saveFastPathEnabled(supabase: any, enabled: boolean) {
+  await supabase
+    .from("bot_config")
+    .upsert({ id: 1, fast_path_enabled: enabled, updated_at: new Date().toISOString() });
+  clearReplyCache();
+}
+
 async function getReplyByKeyword(supabase: any, keyword: string) {
   const cache = await loadReplyCache(supabase);
   return cache.replies.get(keyword) ?? null;
@@ -803,6 +817,20 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     await tgRequest(token, "sendMessage", {
       chat_id: chatId,
       text: "👨‍💻 ផ្ទាំងគ្រប់គ្រង Auto-Reply Bot\n\nសួស្ដីម្ចាស់គណនី សូមជ្រើសរើសមុខងារខាងក្រោម៖",
+      reply_markup: MAIN_KEYBOARD,
+    });
+    return;
+  }
+
+  if (text === "⚡ Fast-Path") {
+    const enabled = await loadFastPathEnabled(supabase);
+    const next = !enabled;
+    await saveFastPathEnabled(supabase, next);
+    await tgRequest(token, "sendMessage", {
+      chat_id: chatId,
+      text: next
+        ? "⚡ Fast-Path: ✅ បើក\n\nBot នឹងឆ្លើយលឿនបំផុត (round-trip តែមួយ)។\nចំណាំ: សារ bot នឹងមិនត្រូវលុបស្វ័យប្រវត្តិទេ ទោះបី Timer បើកក៏ដោយ។"
+        : "⚡ Fast-Path: ⛔ បិទ\n\nBot នឹងឆ្លើយធម្មតា (យឺតជាងបន្តិច) ប៉ុន្តែ auto-delete សារ bot នឹងដំណើរការពេញលេញ។",
       reply_markup: MAIN_KEYBOARD,
     });
     return;
@@ -1420,7 +1448,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               // Cold isolate — warm cache in background so next call fast-paths.
               fetchReplyCache(supabaseAdmin).catch(() => {});
             }
-            if (cache) {
+            if (cache && cache.fastPathEnabled) {
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
               const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;

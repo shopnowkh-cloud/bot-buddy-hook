@@ -1386,6 +1386,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               if (match && !Array.isArray(match.content)) {
                 const chatId = msg.chat.id;
                 const effective = match.delete_after_seconds ?? cache.config;
+                logUsage(supabaseAdmin, kw!, msg);
+
 
                 // Fire-and-forget: delete user message + group tracking + schedule bot-message deletion
                 fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {

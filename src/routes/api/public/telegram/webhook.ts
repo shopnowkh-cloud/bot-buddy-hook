@@ -97,6 +97,8 @@ const metrics: Metrics = {
   fastPathHit: 0,
   fastPathMiss: 0,
   fastPathDisabled: 0,
+  fastPathAlbum: 0,
+  fastPathMulti: 0,
   errors: 0,
   latencies: [],
   prewarmAttempts: 0,

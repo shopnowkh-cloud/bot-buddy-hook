@@ -743,6 +743,7 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
       }
       const hit = await resolveCommandKeyword(supabase, cmd);
       if (hit) {
+        logUsage(supabase, hit.keyword, msg);
         await deleteAndSendMatch(token, supabase, chatId, msg.message_id, hit.entry);
       }
     }

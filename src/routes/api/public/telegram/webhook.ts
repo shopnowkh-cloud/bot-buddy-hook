@@ -148,6 +148,7 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
     replyCache = {
       expiresAt: Date.now() + REPLY_CACHE_TTL_MS,
       config: configResult.data?.delete_after_seconds ?? 0,
+      fastPathEnabled: configResult.data?.fast_path_enabled ?? true,
       replies,
       rowsOrder,
       commands: cmdToKw,

@@ -142,6 +142,8 @@ function snapshotMetrics() {
       hit: metrics.fastPathHit,
       miss: metrics.fastPathMiss,
       disabled: metrics.fastPathDisabled,
+      album: metrics.fastPathAlbum,
+      multi: metrics.fastPathMulti,
       hit_rate: fastTotal ? +(metrics.fastPathHit / fastTotal).toFixed(4) : 0,
     },
     latency_ms: {

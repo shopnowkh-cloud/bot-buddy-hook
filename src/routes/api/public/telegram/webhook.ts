@@ -200,12 +200,28 @@ function buildCommandMaps(keywords: string[]) {
 }
 
 
+// ---- Timeout + retry helpers for cache prewarm ---------------------------
+const CACHE_FETCH_TIMEOUT_MS = 2500;
+const PREWARM_MAX_ATTEMPTS = 4;
+const PREWARM_BACKOFF_MS = [150, 400, 1000, 2000];
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
-  replyCachePromise = Promise.all([
+  const query = Promise.all([
     supabase.from("replies").select("keyword, content, delete_after_seconds, position, row_index").order("row_index").order("position").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds, fast_path_enabled").eq("id", 1).maybeSingle(),
-  ]).then(([replyResult, configResult]: any[]) => {
+  ]);
+  replyCachePromise = withTimeout(query, CACHE_FETCH_TIMEOUT_MS, "fetchReplyCache").then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
     const rowsMap = new Map<number, string[]>();
     const orderedKeywords: string[] = [];
@@ -238,6 +254,35 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
     throw e;
   });
   return replyCachePromise;
+}
+
+// Fire-and-forget prewarm with retry + timeout. Safe to call repeatedly:
+// a single prewarm run is deduped across concurrent callers.
+let prewarmInflight: Promise<ReplyCache | null> | null = null;
+export function prewarmReplyCache(supabase: any): Promise<ReplyCache | null> {
+  if (replyCache && replyCache.expiresAt > Date.now()) return Promise.resolve(replyCache);
+  if (prewarmInflight) return prewarmInflight;
+  const start = Date.now();
+  metrics.prewarmAttempts++;
+  prewarmInflight = (async () => {
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < PREWARM_MAX_ATTEMPTS; attempt++) {
+      try {
+        const c = await fetchReplyCache(supabase);
+        metrics.prewarmSuccess++;
+        metrics.prewarmMs = Date.now() - start;
+        return c;
+      } catch (e) {
+        lastErr = e;
+        const backoff = PREWARM_BACKOFF_MS[attempt] ?? 2000;
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    }
+    metrics.prewarmFailure++;
+    console.warn("[webhook] prewarmReplyCache failed after retries:", lastErr);
+    return null;
+  })().finally(() => { prewarmInflight = null; });
+  return prewarmInflight;
 }
 
 

@@ -347,6 +347,7 @@ function MiniApp() {
       <main className="flex-1 px-3 pb-28 overflow-y-auto">
         <div key={tab} className="tg-anim-page tg-stagger">
           {tab === "stats" && <StatsPanel onGo={setTab} />}
+          {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}
@@ -356,8 +357,9 @@ function MiniApp() {
 
       {/* Bottom tab bar — large clear buttons */}
       <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
-        <div className="grid grid-cols-5 gap-1 px-2 py-2">
+        <div className="grid grid-cols-6 gap-1 px-1 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
+          <TabBtn icon={<TrendingUp />} label="វិភាគ" active={tab === "analytics"} onClick={() => { hapticImpact(); setTab("analytics"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
           <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
           <TabBtn icon={<ListChecks />} label="Pending" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />

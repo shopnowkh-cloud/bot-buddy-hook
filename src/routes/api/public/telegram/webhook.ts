@@ -20,18 +20,28 @@ function safeEqual(a: string, b: string): boolean {
 
 type TgRequestBody = Record<string, unknown>;
 
-// Preload admin client module at isolate startup so first webhook call skips import cost
+// Preload admin client module at isolate startup so first webhook call skips import cost.
+// Also prewarm the reply cache so the group fast-path can serve the first request inline.
 let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null =
-  import("@/integrations/supabase/client.server").catch((e) => {
-    _adminClientPromise = null;
-    throw e;
-  }) as any;
+  import("@/integrations/supabase/client.server")
+    .then((mod) => {
+      // Fire-and-forget: warm the reply cache once the admin client is available.
+      try {
+        fetchReplyCache(mod.supabaseAdmin).catch(() => {});
+      } catch {}
+      return mod;
+    })
+    .catch((e) => {
+      _adminClientPromise = null;
+      throw e;
+    }) as any;
 function getAdminClient() {
   if (!_adminClientPromise) {
     _adminClientPromise = import("@/integrations/supabase/client.server");
   }
   return _adminClientPromise;
 }
+
 
 type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = {

@@ -91,7 +91,7 @@ export const Route = createFileRoute("/api/public/telegram/register-webhook")({
 
         return new Response(
           JSON.stringify(
-            { ok: tgRes.ok, webhookUrl, setWebhook: tgJson, setMyCommands: commandsSync, info: infoJson },
+            { ok: tgRes.ok, webhookUrl, setWebhook: tgJson, setMyCommands: commandsSync, setChatMenuButton: menuButtonReset, info: infoJson },
             null,
             2,
           ),

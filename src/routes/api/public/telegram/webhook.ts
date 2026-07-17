@@ -1280,6 +1280,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     if (cmd) {
       const hit = await resolveCommandKeyword(supabase, cmd);
       if (hit) {
+        logUsage(supabase, hit.keyword, msg);
         await Promise.all([
           tgRequest(token, "deleteMessage", {
             chat_id: chatId,

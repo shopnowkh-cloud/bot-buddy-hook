@@ -78,6 +78,8 @@ type Metrics = {
   fastPathHit: number;   // served inline (single reply, group)
   fastPathMiss: number;  // eligible group text but no inline reply produced
   fastPathDisabled: number;
+  fastPathAlbum: number; // served inline as copyMessages/forwardMessages
+  fastPathMulti: number; // served inline + background follow-ups
   errors: number;
   latencies: number[];   // ring buffer of last N request durations (ms)
   prewarmAttempts: number;
@@ -95,6 +97,8 @@ const metrics: Metrics = {
   fastPathHit: 0,
   fastPathMiss: 0,
   fastPathDisabled: 0,
+  fastPathAlbum: 0,
+  fastPathMulti: 0,
   errors: 0,
   latencies: [],
   prewarmAttempts: 0,
@@ -138,6 +142,8 @@ function snapshotMetrics() {
       hit: metrics.fastPathHit,
       miss: metrics.fastPathMiss,
       disabled: metrics.fastPathDisabled,
+      album: metrics.fastPathAlbum,
+      multi: metrics.fastPathMulti,
       hit_rate: fastTotal ? +(metrics.fastPathHit / fastTotal).toFixed(4) : 0,
     },
     latency_ms: {
@@ -1608,49 +1614,111 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
               const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;
-              if (match && !Array.isArray(match.content)) {
+              if (match) {
                 const chatId = msg.chat.id;
-                logUsage(supabaseAdmin, kw!, msg);
 
-                // Fire-and-forget: delete user message + group tracking
-                fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ chat_id: chatId, message_id: msg.message_id }),
-                }).catch(() => {});
+                // Build a single inline payload for one reply item.
+                const buildInline = (r: any): any | null => {
+                  const p: any = { chat_id: chatId };
+                  if (r.type === "text") { p.method = "sendMessage"; p.text = r.content; }
+                  else if (r.type === "photo") { p.method = "sendPhoto"; p.photo = r.content; if (r.caption) p.caption = r.caption; }
+                  else if (r.type === "video") { p.method = "sendVideo"; p.video = r.content; if (r.caption) p.caption = r.caption; }
+                  else if (r.type === "voice") { p.method = "sendVoice"; p.voice = r.content; }
+                  else if (r.type === "audio") { p.method = "sendAudio"; p.audio = r.content; if (r.caption) p.caption = r.caption; }
+                  else if (r.type === "document") { p.method = "sendDocument"; p.document = r.content; if (r.caption) p.caption = r.caption; }
+                  else if (r.type === "sticker") { p.method = "sendSticker"; p.sticker = r.content; }
+                  else if (r.type === "copy") {
+                    p.method = r.forward ? "forwardMessage" : "copyMessage";
+                    p.from_chat_id = r.from_chat_id;
+                    p.message_id = r.message_id;
+                  } else return null;
+                  return p.method ? p : null;
+                };
 
-                const now = Date.now();
-                if (now - (groupTrackCache.get(chatId) ?? 0) > GROUP_TRACK_TTL_MS) {
-                  groupTrackCache.set(chatId, now);
-                  supabaseAdmin
-                    .from("tg_groups")
-                    .upsert(
-                      { chat_id: chatId, title: msg.chat.title ?? null, is_member: true, updated_at: new Date().toISOString() },
-                      { onConflict: "chat_id" },
+                // Decide inline plan:
+                //  - single object          → inline that one method
+                //  - single-album array     → inline copyMessages/forwardMessages
+                //  - heterogeneous multi    → inline first + background rest
+                let inline: any | null = null;
+                let background: any[] = [];
+                let flavor: "single" | "album" | "multi" = "single";
+
+                if (!Array.isArray(match.content)) {
+                  inline = buildInline(match.content);
+                } else {
+                  const list: any[] = match.content;
+                  if (list.length === 1) {
+                    inline = buildInline(list[0]);
+                  } else if (
+                    list.length >= 2 &&
+                    list.every(
+                      (it) =>
+                        it?.type === "copy" &&
+                        it.media_group_id &&
+                        it.from_chat_id === list[0].from_chat_id &&
+                        it.media_group_id === list[0].media_group_id &&
+                        !!it.forward === !!list[0].forward,
                     )
-                    .then(() => {}, () => groupTrackCache.delete(chatId));
+                  ) {
+                    const first = list[0];
+                    const ids = list
+                      .map((it) => it.message_id)
+                      .sort((a: number, b: number) => a - b)
+                      .slice(0, 10);
+                    inline = {
+                      chat_id: chatId,
+                      method: first.forward ? "forwardMessages" : "copyMessages",
+                      from_chat_id: first.from_chat_id,
+                      message_ids: ids,
+                      ...(first.forward ? {} : { remove_caption: false }),
+                    };
+                    flavor = "album";
+                  } else {
+                    inline = buildInline(list[0]);
+                    background = list.slice(1);
+                    flavor = "multi";
+                  }
                 }
 
-                const r = match.content;
-                const inline: any = { chat_id: chatId };
-                if (r.type === "text") { inline.method = "sendMessage"; inline.text = r.content; }
-                else if (r.type === "photo") { inline.method = "sendPhoto"; inline.photo = r.content; if (r.caption) inline.caption = r.caption; }
-                else if (r.type === "video") { inline.method = "sendVideo"; inline.video = r.content; if (r.caption) inline.caption = r.caption; }
-                else if (r.type === "voice") { inline.method = "sendVoice"; inline.voice = r.content; }
-                else if (r.type === "audio") { inline.method = "sendAudio"; inline.audio = r.content; if (r.caption) inline.caption = r.caption; }
-                else if (r.type === "document") { inline.method = "sendDocument"; inline.document = r.content; if (r.caption) inline.caption = r.caption; }
-                else if (r.type === "sticker") { inline.method = "sendSticker"; inline.sticker = r.content; }
-                else if (r.type === "copy") {
-                  inline.method = r.forward ? "forwardMessage" : "copyMessage";
-                  inline.from_chat_id = r.from_chat_id;
-                  inline.message_id = r.message_id;
-                }
+                if (inline?.method) {
+                  logUsage(supabaseAdmin, kw!, msg);
 
-                if (inline.method) {
-                  // Inline webhook response: Telegram sends the reply in the
-                  // same HTTP round-trip. Auto-delete of the bot's own reply
-                  // is skipped in fast path (no message_id returned inline).
+                  // Fire-and-forget: delete user message
+                  fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ chat_id: chatId, message_id: msg.message_id }),
+                  }).catch(() => {});
+
+                  const now = Date.now();
+                  if (now - (groupTrackCache.get(chatId) ?? 0) > GROUP_TRACK_TTL_MS) {
+                    groupTrackCache.set(chatId, now);
+                    supabaseAdmin
+                      .from("tg_groups")
+                      .upsert(
+                        { chat_id: chatId, title: msg.chat.title ?? null, is_member: true, updated_at: new Date().toISOString() },
+                        { onConflict: "chat_id" },
+                      )
+                      .then(() => {}, () => groupTrackCache.delete(chatId));
+                  }
+
+                  // Fire follow-up messages in parallel (multi-message case).
+                  // These use standard API calls; auto-delete is not scheduled
+                  // in fast path (parity with single-inline behavior).
+                  for (const item of background) {
+                    const p = buildInline(item);
+                    if (!p?.method) continue;
+                    const { method, ...body } = p;
+                    fetch(`https://api.telegram.org/bot${token}/${method}`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    }).catch(() => {});
+                  }
+
                   metrics.fastPathHit++;
+                  if (flavor === "album") metrics.fastPathAlbum++;
+                  else if (flavor === "multi") metrics.fastPathMulti++;
                   recordLatency(Date.now() - __start);
                   return new Response(JSON.stringify(inline), {
                     status: 200,

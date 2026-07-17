@@ -352,6 +352,7 @@ function MiniApp() {
           {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
           {tab === "groups" && <GroupsPanel />}
+          {tab === "inbox" && <InboxPanel />}
           {tab === "schedule" && <SchedulePanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}
@@ -361,11 +362,12 @@ function MiniApp() {
 
       {/* Bottom tab bar — large clear buttons */}
       <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
-        <div className="grid grid-cols-8 gap-0.5 px-1 py-2">
+        <div className="grid grid-cols-9 gap-0.5 px-1 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
           <TabBtn icon={<TrendingUp />} label="វិភាគ" active={tab === "analytics"} onClick={() => { hapticImpact(); setTab("analytics"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
           <TabBtn icon={<Users />} label="Groups" active={tab === "groups"} onClick={() => { hapticImpact(); setTab("groups"); }} />
+          <TabBtn icon={<Inbox />} label="Inbox" active={tab === "inbox"} onClick={() => { hapticImpact(); setTab("inbox"); }} />
           <TabBtn icon={<CalendarClock />} label="ពេល" active={tab === "schedule"} onClick={() => { hapticImpact(); setTab("schedule"); }} />
           <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
           <TabBtn icon={<ListChecks />} label="Pend" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />

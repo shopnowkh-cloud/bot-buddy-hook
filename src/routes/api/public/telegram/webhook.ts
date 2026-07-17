@@ -1600,8 +1600,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             let cache = replyCache; // sync peek; only take fast path when cache is hot
             if (cache) metrics.cacheHit++; else metrics.cacheMiss++;
             if (!cache) {
-              // Cold isolate — warm cache in background so next call fast-paths.
-              fetchReplyCache(supabaseAdmin).catch(() => {});
+              // Cold isolate — retrying prewarm in background so next call fast-paths.
+              prewarmReplyCache(supabaseAdmin).catch(() => {});
             }
             if (cache && !cache.fastPathEnabled) metrics.fastPathDisabled++;
             if (cache && cache.fastPathEnabled) {

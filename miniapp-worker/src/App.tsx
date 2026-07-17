@@ -666,7 +666,22 @@ function KeywordsPanel() {
       )}
 
       {q.isLoading && <p className="tg-hint text-sm text-center py-6">កំពុងផ្ទុក...</p>}
-      {!q.isLoading && replies.length === 0 && (
+      {q.isError && (
+        <div className="tg-card p-4" style={{ border: "1px solid #fca5a5", background: "#fef2f2" }}>
+          <p className="font-semibold text-sm mb-1" style={{ color: "#b91c1c" }}>⚠️ មិនអាចផ្ទុកពាក្យបញ្ជា</p>
+          <p className="text-xs break-all whitespace-pre-wrap" style={{ color: "#dc2626" }}>
+            {(q.error as Error)?.message || "Unknown error"}
+          </p>
+          <p className="text-xs tg-hint mt-2">
+            ត្រូវបើក Mini App តាម bot menu ក្នុង Telegram ឬបន្ថែម <code>?token=…</code> នៅចុង URL។
+          </p>
+          <button
+            onClick={() => q.refetch()}
+            className="mt-3 h-9 px-4 rounded-xl bg-[var(--tg-btn)] text-white text-sm font-semibold"
+          >សាកម្ដងទៀត</button>
+        </div>
+      )}
+      {!q.isLoading && !q.isError && replies.length === 0 && (
         <div className="tg-card p-8 text-center">
           <Hash className="h-10 w-10 mx-auto mb-2 tg-hint" />
           <p className="tg-hint text-sm">មិនទាន់មានពាក្យគន្លឹះ</p>

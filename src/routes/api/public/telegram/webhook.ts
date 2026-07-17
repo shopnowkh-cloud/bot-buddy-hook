@@ -1612,8 +1612,13 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             await handleMessage(token, adminId, supabaseAdmin, msg);
           }
         } catch (err) {
+          metrics.errors++;
           console.error("Telegram webhook error:", err);
         }
+
+        const __elapsed = Date.now() - __start;
+        recordLatency(__elapsed);
+        if (__elapsed > 1000) console.warn(`[webhook] slow update ${update?.update_id} took ${__elapsed}ms`);
 
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,

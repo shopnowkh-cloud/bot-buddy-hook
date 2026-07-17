@@ -358,6 +358,70 @@ export const Route = createFileRoute("/api/public/bot/bridge")({
               if (error) return jerr(500, error.message);
               return jok({ groups: data ?? [] });
             }
+            case "list_schedules": {
+              const { data, error } = await s
+                .from("scheduled_messages")
+                .select("*")
+                .order("id", { ascending: false })
+                .limit(500);
+              if (error) return jerr(500, error.message);
+              return jok({ schedules: data ?? [] });
+            }
+            case "list_groups": {
+              const { data, error } = await s
+                .from("tg_groups")
+                .select("chat_id, title, is_member")
+                .eq("is_member", true)
+                .order("updated_at", { ascending: false })
+                .limit(200);
+              if (error) return jerr(500, error.message);
+              return jok({ groups: data ?? [] });
+            }
+            case "create_schedule": {
+              if (!req.repeat_daily && !req.scheduled_at) {
+                return jerr(400, "scheduled_at required for one-time schedules");
+              }
+              if (req.repeat_daily && !req.daily_time) {
+                return jerr(400, "daily_time required for daily schedules");
+              }
+              const { error } = await s.from("scheduled_messages").insert({
+                keyword: req.keyword,
+                group_chat_id: req.group_chat_id,
+                group_title: req.group_title ?? null,
+                repeat_daily: req.repeat_daily,
+                daily_time: req.repeat_daily ? req.daily_time! : null,
+                scheduled_at: req.repeat_daily ? null : req.scheduled_at!,
+                enabled: true,
+              });
+              if (error) return jerr(500, error.message);
+              return jok({ ok: true });
+            }
+            case "update_schedule": {
+              const patch: any = {};
+              if (req.keyword !== undefined) patch.keyword = req.keyword;
+              if (req.group_chat_id !== undefined) patch.group_chat_id = req.group_chat_id;
+              if (req.group_title !== undefined) patch.group_title = req.group_title;
+              if (req.repeat_daily !== undefined) patch.repeat_daily = req.repeat_daily;
+              if (req.daily_time !== undefined) patch.daily_time = req.daily_time;
+              if (req.scheduled_at !== undefined) patch.scheduled_at = req.scheduled_at;
+              if (req.enabled !== undefined) patch.enabled = req.enabled;
+              const { error } = await s.from("scheduled_messages").update(patch).eq("id", req.id);
+              if (error) return jerr(500, error.message);
+              return jok({ ok: true });
+            }
+            case "delete_schedule": {
+              const { error } = await s.from("scheduled_messages").delete().eq("id", req.id);
+              if (error) return jerr(500, error.message);
+              return jok({ ok: true });
+            }
+            case "toggle_schedule": {
+              const { error } = await s
+                .from("scheduled_messages")
+                .update({ enabled: req.enabled })
+                .eq("id", req.id);
+              if (error) return jerr(500, error.message);
+              return jok({ ok: true });
+            }
           }
         } catch (e: any) {
           return jerr(500, e?.message ?? "server error");

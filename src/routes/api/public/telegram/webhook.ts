@@ -215,13 +215,8 @@ export async function tgRequest(token: string, method: string, body: TgRequestBo
 // ---------------------------------------------------------------------------
 // Keyboards (preserved from bot.js)
 // ---------------------------------------------------------------------------
-const MINIAPP_BASE_URL =
-  process.env.TELEGRAM_MINIAPP_URL ||
-  "https://bot-buddy-hook.lovable.app/miniapp";
-
 export const MAIN_KEYBOARD = {
   keyboard: [
-    [{ text: "🧩 បើក Mini App", web_app: { url: MINIAPP_BASE_URL } }],
     ["បន្ថែមពាក្យថ្មី"],
     ["បញ្ជីពាក្យ កែប្រែ&លុប"],
     ["⏱ កំណត់ Timer លុបសារ"],
@@ -230,6 +225,7 @@ export const MAIN_KEYBOARD = {
   resize_keyboard: true,
   is_persistent: true,
 };
+
 
 const SCHED_REPEAT_KEYBOARD = {
   keyboard: [["🔂 មួយដង", "🔁 រាល់ថ្ងៃ"], ["❌ បោះបង់"]],

@@ -43,6 +43,7 @@ import {
   TrendingUp,
   Users,
   Flame,
+  CalendarClock,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";

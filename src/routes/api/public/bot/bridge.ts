@@ -84,7 +84,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type, x-bridge-secret",
+    "Access-Control-Allow-Headers": "content-type, x-bridge-secret, x-init-data, x-admin-token",
     "Access-Control-Max-Age": "86400",
   } as Record<string, string>;
 }

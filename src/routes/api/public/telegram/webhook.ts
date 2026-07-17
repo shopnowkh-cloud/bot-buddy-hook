@@ -21,13 +21,13 @@ function safeEqual(a: string, b: string): boolean {
 type TgRequestBody = Record<string, unknown>;
 
 // Preload admin client module at isolate startup so first webhook call skips import cost.
-// Also prewarm the reply cache so the group fast-path can serve the first request inline.
+// Also prewarm the reply cache (with retry + timeout) so the group fast-path can
+// serve the first request inline even on a cold isolate.
 let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null =
   import("@/integrations/supabase/client.server")
     .then((mod) => {
-      // Fire-and-forget: warm the reply cache once the admin client is available.
       try {
-        fetchReplyCache(mod.supabaseAdmin).catch(() => {});
+        prewarmReplyCache(mod.supabaseAdmin).catch(() => {});
       } catch {}
       return mod;
     })
@@ -37,7 +37,11 @@ let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.s
     }) as any;
 function getAdminClient() {
   if (!_adminClientPromise) {
-    _adminClientPromise = import("@/integrations/supabase/client.server");
+    _adminClientPromise = import("@/integrations/supabase/client.server").then((mod) => {
+      // Kick off a prewarm on lazy client init too.
+      try { prewarmReplyCache(mod.supabaseAdmin).catch(() => {}); } catch {}
+      return mod;
+    });
   }
   return _adminClientPromise;
 }

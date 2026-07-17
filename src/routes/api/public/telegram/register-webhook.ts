@@ -71,12 +71,27 @@ export const Route = createFileRoute("/api/public/telegram/register-webhook")({
           commandsSync = { ok: false, error: String(err?.message ?? err) };
         }
 
+        // Reset the chat menu button to Telegram's default (removes any Mini App button
+        // previously set via BotFather or setChatMenuButton).
+        let menuButtonReset: any = { ok: false };
+        try {
+          const mbRes = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ menu_button: { type: "commands" } }),
+          });
+          menuButtonReset = await mbRes.json().catch(() => ({ ok: false }));
+        } catch (err: any) {
+          menuButtonReset = { ok: false, error: String(err?.message ?? err) };
+        }
+
         const infoRes = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
         const infoJson = await infoRes.json().catch(() => ({}));
 
+
         return new Response(
           JSON.stringify(
-            { ok: tgRes.ok, webhookUrl, setWebhook: tgJson, setMyCommands: commandsSync, info: infoJson },
+            { ok: tgRes.ok, webhookUrl, setWebhook: tgJson, setMyCommands: commandsSync, setChatMenuButton: menuButtonReset, info: infoJson },
             null,
             2,
           ),

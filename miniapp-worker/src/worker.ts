@@ -91,7 +91,7 @@ export default {
           headers: {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "content-type",
+            "Access-Control-Allow-Headers": "content-type, x-init-data, x-admin-token",
             "Access-Control-Max-Age": "86400",
           },
         });
@@ -108,16 +108,21 @@ export default {
       }
 
       const body = await request.text();
+      const forwardHeaders: Record<string, string> = {
+        "content-type": "application/json",
+        "x-bridge-secret": env.BOT_SYNC_SECRET,
+      };
+      const initData = request.headers.get("x-init-data");
+      if (initData) forwardHeaders["x-init-data"] = initData;
+      const adminToken = request.headers.get("x-admin-token");
+      if (adminToken) forwardHeaders["x-admin-token"] = adminToken;
+
       const upstream = await fetch(env.BOT_SYNC_URL, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-bridge-secret": env.BOT_SYNC_SECRET,
-        },
+        headers: forwardHeaders,
         body,
       });
 
-      // Relay status + body; strip hop-by-hop headers.
       const respHeaders = new Headers();
       const ct = upstream.headers.get("content-type");
       if (ct) respHeaders.set("content-type", ct);

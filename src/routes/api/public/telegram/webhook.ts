@@ -639,7 +639,7 @@ async function saveState(
     );
 }
 
-async function loadConfig(supabase: any): Promise<number> {
+export async function loadConfig(supabase: any): Promise<number> {
   const cache = await loadReplyCache(supabase);
   return cache.config;
 }

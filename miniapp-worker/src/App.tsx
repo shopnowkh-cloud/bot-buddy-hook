@@ -40,6 +40,9 @@ import {
   FileText,
   Sticker,
   Film,
+  TrendingUp,
+  Users,
+  Flame,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -271,7 +274,7 @@ function fmtDelay(s: number | null | undefined): string {
   return `${s} វិនាទី`;
 }
 
-type Tab = "stats" | "keywords" | "timer" | "pending" | "admins";
+type Tab = "stats" | "analytics" | "keywords" | "timer" | "pending" | "admins";
 
 function MiniApp() {
   const [ready, setReady] = useState(false);
@@ -344,6 +347,7 @@ function MiniApp() {
       <main className="flex-1 px-3 pb-28 overflow-y-auto">
         <div key={tab} className="tg-anim-page tg-stagger">
           {tab === "stats" && <StatsPanel onGo={setTab} />}
+          {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}
@@ -353,8 +357,9 @@ function MiniApp() {
 
       {/* Bottom tab bar — large clear buttons */}
       <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
-        <div className="grid grid-cols-5 gap-1 px-2 py-2">
+        <div className="grid grid-cols-6 gap-1 px-1 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
+          <TabBtn icon={<TrendingUp />} label="វិភាគ" active={tab === "analytics"} onClick={() => { hapticImpact(); setTab("analytics"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
           <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
           <TabBtn icon={<ListChecks />} label="Pending" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />
@@ -452,6 +457,157 @@ function BigAction({ icon, label, onClick }: { icon: React.ReactNode; label: str
       <span className="[&_svg]:h-5 [&_svg]:w-5">{icon}</span>
       {label}
     </button>
+  );
+}
+
+function AnalyticsPanel() {
+  const [range, setRange] = useState<7 | 14 | 30>(14);
+
+  const overviewQ = useQuery({
+    queryKey: ["analytics_overview"],
+    queryFn: () => callApi<{ overview: {
+      total_hits?: number; hits_today?: number; hits_7d?: number; hits_30d?: number;
+      total_keywords?: number; total_groups?: number; active_groups_7d?: number;
+    } }>("analytics_overview"),
+  });
+  const topQ = useQuery({
+    queryKey: ["analytics_top_keywords", range],
+    queryFn: () => callApi<{ keywords: { keyword: string; hits: number; last_used: string }[] }>(
+      "analytics_top_keywords", { days: range, limit: 10 },
+    ),
+  });
+  const dailyQ = useQuery({
+    queryKey: ["analytics_daily", range],
+    queryFn: () => callApi<{ daily: { day: string; hits: number }[] }>(
+      "analytics_daily", { days: range },
+    ),
+  });
+  const groupsQ = useQuery({
+    queryKey: ["analytics_groups", range],
+    queryFn: () => callApi<{ groups: { chat_id: number; chat_title: string; hits: number; last_used: string }[] }>(
+      "analytics_groups", { days: range, limit: 10 },
+    ),
+  });
+
+  const o = overviewQ.data?.overview ?? {};
+  const daily = dailyQ.data?.daily ?? [];
+  const maxDaily = Math.max(1, ...daily.map((d) => Number(d.hits) || 0));
+  const topKw = topQ.data?.keywords ?? [];
+  const maxKw = Math.max(1, ...topKw.map((k) => Number(k.hits) || 0));
+  const groups = groupsQ.data?.groups ?? [];
+
+  return (
+    <div className="space-y-3 pt-2">
+      <SectionTitle>ស្ថិតិទូទៅ</SectionTitle>
+      <div className="grid grid-cols-2 gap-3">
+        <MiniStat icon={<Flame />} label="ថ្ងៃនេះ" value={o.hits_today ?? 0} />
+        <MiniStat icon={<TrendingUp />} label="៧ថ្ងៃចុងក្រោយ" value={o.hits_7d ?? 0} />
+        <MiniStat icon={<BarChart3 />} label="៣០ថ្ងៃ" value={o.hits_30d ?? 0} />
+        <MiniStat icon={<Users />} label="Group សកម្ម" value={o.active_groups_7d ?? 0} />
+      </div>
+
+      <div className="flex items-center justify-between px-1 pt-2">
+        <SectionTitle>ក្រាហ្វការប្រើប្រាស់</SectionTitle>
+        <div className="flex gap-1 pr-2">
+          {[7, 14, 30].map((d) => (
+            <button
+              key={d}
+              onClick={() => { hapticImpact("light"); setRange(d as 7 | 14 | 30); }}
+              className={`px-2 py-1 rounded-lg text-xs font-medium ${
+                range === d ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)] text-[var(--tg-hint)]"
+              }`}
+            >
+              {d}ថ្ងៃ
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="tg-card p-3">
+        {dailyQ.isLoading ? (
+          <div className="h-32 grid place-items-center tg-hint text-sm">កំពុងផ្ទុក…</div>
+        ) : daily.length === 0 ? (
+          <div className="h-32 grid place-items-center tg-hint text-sm">មិនទាន់មានទិន្នន័យ</div>
+        ) : (
+          <div className="h-32 flex items-end gap-1">
+            {daily.map((d) => {
+              const h = Math.round((Number(d.hits) / maxDaily) * 100);
+              return (
+                <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className="w-full rounded-t-md bg-[var(--tg-btn)] transition-all"
+                    style={{ height: `${Math.max(4, h)}%` }}
+                    title={`${d.day}: ${d.hits}`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex justify-between mt-2 text-[10px] tg-hint px-1">
+          <span>{daily[0]?.day?.slice(5) ?? ""}</span>
+          <span>{daily[daily.length - 1]?.day?.slice(5) ?? ""}</span>
+        </div>
+      </div>
+
+      <SectionTitle>ពាក្យបញ្ជាពេញនិយម 🔥</SectionTitle>
+      <div className="tg-card p-2 divide-y divide-white/5">
+        {topQ.isLoading ? (
+          <div className="p-3 tg-hint text-sm text-center">កំពុងផ្ទុក…</div>
+        ) : topKw.length === 0 ? (
+          <div className="p-3 tg-hint text-sm text-center">មិនទាន់មានទិន្នន័យ</div>
+        ) : (
+          topKw.map((k, i) => (
+            <div key={k.keyword} className="py-2 px-2">
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="font-medium truncate">
+                  <span className="tg-hint mr-2">#{i + 1}</span>{k.keyword}
+                </span>
+                <span className="text-[var(--tg-btn)] font-semibold ml-2">{k.hits}</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-[var(--tg-section)] overflow-hidden">
+                <div
+                  className="h-full bg-[var(--tg-btn)] rounded-full"
+                  style={{ width: `${(Number(k.hits) / maxKw) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <SectionTitle>Group សកម្មបំផុត 👥</SectionTitle>
+      <div className="tg-card p-2 divide-y divide-white/5">
+        {groupsQ.isLoading ? (
+          <div className="p-3 tg-hint text-sm text-center">កំពុងផ្ទុក…</div>
+        ) : groups.length === 0 ? (
+          <div className="p-3 tg-hint text-sm text-center">មិនទាន់មានទិន្នន័យ</div>
+        ) : (
+          groups.map((g, i) => (
+            <div key={g.chat_id} className="py-2 px-2 flex items-center gap-2">
+              <span className="tg-hint text-xs w-6">#{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{g.chat_title || `Group ${g.chat_id}`}</p>
+                <p className="tg-hint text-[11px] truncate">ID: {g.chat_id}</p>
+              </div>
+              <span className="text-[var(--tg-btn)] font-semibold">{g.hits}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
+  return (
+    <div className="tg-card p-3">
+      <div className="flex items-center gap-2 tg-hint text-xs mb-1">
+        <span className="[&_svg]:h-4 [&_svg]:w-4">{icon}</span>
+        {label}
+      </div>
+      <p className="text-2xl font-bold">{value}</p>
+    </div>
   );
 }
 

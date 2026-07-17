@@ -64,6 +64,22 @@ function isDuplicateUpdate(id: number | undefined): boolean {
   return false;
 }
 
+// ---- Analytics: log every matched keyword hit (fire-and-forget) ----
+export function logUsage(supabase: any, keyword: string, msg: any) {
+  try {
+    const row = {
+      keyword,
+      chat_id: msg?.chat?.id,
+      chat_type: msg?.chat?.type ?? null,
+      chat_title: msg?.chat?.title ?? null,
+      user_id: msg?.from?.id ?? null,
+      username: msg?.from?.username ?? null,
+    };
+    if (!row.chat_id) return;
+    supabase.from("usage_logs").insert(row).then(() => {}, () => {});
+  } catch {}
+}
+
 export function clearReplyCache() {
   replyCache = null;
   replyCachePromise = null;
@@ -727,6 +743,7 @@ export async function handleUserMessage(token: string, supabase: any, msg: any) 
       }
       const hit = await resolveCommandKeyword(supabase, cmd);
       if (hit) {
+        logUsage(supabase, hit.keyword, msg);
         await deleteAndSendMatch(token, supabase, chatId, msg.message_id, hit.entry);
       }
     }
@@ -1263,6 +1280,7 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     if (cmd) {
       const hit = await resolveCommandKeyword(supabase, cmd);
       if (hit) {
+        logUsage(supabase, hit.keyword, msg);
         await Promise.all([
           tgRequest(token, "deleteMessage", {
             chat_id: chatId,
@@ -1368,6 +1386,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               if (match && !Array.isArray(match.content)) {
                 const chatId = msg.chat.id;
                 const effective = match.delete_after_seconds ?? cache.config;
+                logUsage(supabaseAdmin, kw!, msg);
+
 
                 // Fire-and-forget: delete user message + group tracking + schedule bot-message deletion
                 fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {

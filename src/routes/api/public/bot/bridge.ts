@@ -71,6 +71,21 @@ const RequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("list_admins") }),
   z.object({ action: z.literal("add_admin_id"), admin_id: z.number().int().positive() }),
   z.object({ action: z.literal("remove_admin_id"), admin_id: z.number().int().positive() }),
+  z.object({ action: z.literal("analytics_overview") }),
+  z.object({
+    action: z.literal("analytics_top_keywords"),
+    days: z.number().int().min(1).max(365).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  }),
+  z.object({
+    action: z.literal("analytics_daily"),
+    days: z.number().int().min(1).max(90).optional(),
+  }),
+  z.object({
+    action: z.literal("analytics_groups"),
+    days: z.number().int().min(1).max(365).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  }),
 ]);
 
 function jerr(status: number, msg: string) {
@@ -290,6 +305,34 @@ export const Route = createFileRoute("/api/public/bot/bridge")({
               const { removeAdminId } = await import("@/lib/admin-config.server");
               await removeAdminId(req.admin_id);
               return jok({ ok: true });
+            }
+            case "analytics_overview": {
+              const { data, error } = await s.rpc("get_overall_stats");
+              if (error) return jerr(500, error.message);
+              return jok({ overview: data ?? {} });
+            }
+            case "analytics_top_keywords": {
+              const { data, error } = await s.rpc("get_keyword_stats", {
+                days: req.days ?? 30,
+                top_n: req.limit ?? 10,
+              });
+              if (error) return jerr(500, error.message);
+              return jok({ keywords: data ?? [] });
+            }
+            case "analytics_daily": {
+              const { data, error } = await s.rpc("get_daily_activity", {
+                days: req.days ?? 14,
+              });
+              if (error) return jerr(500, error.message);
+              return jok({ daily: data ?? [] });
+            }
+            case "analytics_groups": {
+              const { data, error } = await s.rpc("get_group_activity", {
+                days: req.days ?? 30,
+                top_n: req.limit ?? 10,
+              });
+              if (error) return jerr(500, error.message);
+              return jok({ groups: data ?? [] });
             }
           }
         } catch (e: any) {

@@ -194,12 +194,69 @@ export type Database = {
         }
         Relationships: []
       }
+      usage_logs: {
+        Row: {
+          chat_id: number
+          chat_title: string | null
+          chat_type: string | null
+          created_at: string
+          id: number
+          keyword: string
+          user_id: number | null
+          username: string | null
+        }
+        Insert: {
+          chat_id: number
+          chat_title?: string | null
+          chat_type?: string | null
+          created_at?: string
+          id?: number
+          keyword: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Update: {
+          chat_id?: number
+          chat_title?: string | null
+          chat_type?: string | null
+          created_at?: string
+          id?: number
+          keyword?: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_daily_activity: {
+        Args: { days?: number }
+        Returns: {
+          day: string
+          hits: number
+        }[]
+      }
+      get_group_activity: {
+        Args: { days?: number; top_n?: number }
+        Returns: {
+          chat_id: number
+          chat_title: string
+          hits: number
+          last_used: string
+        }[]
+      }
+      get_keyword_stats: {
+        Args: { days?: number; top_n?: number }
+        Returns: {
+          hits: number
+          keyword: string
+          last_used: string
+        }[]
+      }
+      get_overall_stats: { Args: never; Returns: Json }
     }
     Enums: {
       [_ in never]: never

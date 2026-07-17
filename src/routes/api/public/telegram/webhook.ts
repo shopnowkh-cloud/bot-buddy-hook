@@ -1448,7 +1448,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               // Cold isolate — warm cache in background so next call fast-paths.
               fetchReplyCache(supabaseAdmin).catch(() => {});
             }
-            if (cache) {
+            if (cache && cache.fastPathEnabled) {
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
               const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;

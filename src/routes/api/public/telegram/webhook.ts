@@ -61,6 +61,79 @@ let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 const groupTrackCache = new Map<number, number>();
 
+// ---------------------------------------------------------------------------
+// Metrics: latency + cache hit-rate + fast-path counters. In-memory per isolate.
+// Exposed via GET /api/public/telegram/webhook?metrics=1&secret=<TELEGRAM_WEBHOOK_SECRET>
+// ---------------------------------------------------------------------------
+type Metrics = {
+  startedAt: number;
+  updates: number;
+  deduped: number;
+  cacheHit: number;      // reply cache warm at request time
+  cacheMiss: number;     // reply cache cold at request time
+  fastPathHit: number;   // served inline (single reply, group)
+  fastPathMiss: number;  // eligible group text but no inline reply produced
+  fastPathDisabled: number;
+  errors: number;
+  latencies: number[];   // ring buffer of last N request durations (ms)
+};
+const METRICS_RING = 500;
+const metrics: Metrics = {
+  startedAt: Date.now(),
+  updates: 0,
+  deduped: 0,
+  cacheHit: 0,
+  cacheMiss: 0,
+  fastPathHit: 0,
+  fastPathMiss: 0,
+  fastPathDisabled: 0,
+  errors: 0,
+  latencies: [],
+};
+function recordLatency(ms: number) {
+  if (metrics.latencies.length >= METRICS_RING) metrics.latencies.shift();
+  metrics.latencies.push(ms);
+}
+function percentile(sorted: number[], p: number): number {
+  if (!sorted.length) return 0;
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+function snapshotMetrics() {
+  const sorted = [...metrics.latencies].sort((a, b) => a - b);
+  const total = metrics.cacheHit + metrics.cacheMiss;
+  const fastTotal = metrics.fastPathHit + metrics.fastPathMiss + metrics.fastPathDisabled;
+  return {
+    uptime_ms: Date.now() - metrics.startedAt,
+    updates: metrics.updates,
+    deduped: metrics.deduped,
+    errors: metrics.errors,
+    cache: {
+      hit: metrics.cacheHit,
+      miss: metrics.cacheMiss,
+      hit_rate: total ? +(metrics.cacheHit / total).toFixed(4) : 0,
+      warm: replyCache !== null,
+      ttl_ms: REPLY_CACHE_TTL_MS,
+    },
+    fast_path: {
+      hit: metrics.fastPathHit,
+      miss: metrics.fastPathMiss,
+      disabled: metrics.fastPathDisabled,
+      hit_rate: fastTotal ? +(metrics.fastPathHit / fastTotal).toFixed(4) : 0,
+    },
+    latency_ms: {
+      samples: sorted.length,
+      min: sorted[0] ?? 0,
+      p50: percentile(sorted, 50),
+      p90: percentile(sorted, 90),
+      p95: percentile(sorted, 95),
+      p99: percentile(sorted, 99),
+      max: sorted[sorted.length - 1] ?? 0,
+      avg: sorted.length ? +(sorted.reduce((a, b) => a + b, 0) / sorted.length).toFixed(2) : 0,
+    },
+  };
+}
+
 // ---- update_id dedup (Telegram retries updates when the webhook is slow) ----
 const seenUpdates = new Map<number, number>();
 const UPDATE_DEDUP_TTL_MS = 5 * 60_000;
@@ -1333,7 +1406,20 @@ export async function handleMessage(token: string, adminId: number, supabase: an
 export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
     handlers: {
+      GET: async ({ request }) => {
+        const url = new URL(request.url);
+        const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
+        const provided = url.searchParams.get("secret") ?? request.headers.get("x-metrics-secret") ?? "";
+        if (!expectedSecret || !safeEqual(provided, expectedSecret)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        return new Response(JSON.stringify(snapshotMetrics(), null, 2), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
       POST: async ({ request }) => {
+        const __start = Date.now();
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const adminId = Number(process.env.ADMIN_CHAT_ID);
         const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -1356,8 +1442,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("Bad request", { status: 400 });
         }
 
+        metrics.updates++;
+
         // Idempotency: Telegram retries updates when the webhook is slow — dedupe.
         if (isDuplicateUpdate(update?.update_id)) {
+          metrics.deduped++;
+          recordLatency(Date.now() - __start);
           return new Response(JSON.stringify({ ok: true, deduped: true }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -1444,10 +1534,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           if (msg?.chat?.id && (msg.chat.type === "group" || msg.chat.type === "supergroup") && msg.text) {
             const { supabaseAdmin } = await getAdminClient();
             let cache = replyCache; // sync peek; only take fast path when cache is hot
+            if (cache) metrics.cacheHit++; else metrics.cacheMiss++;
             if (!cache) {
               // Cold isolate — warm cache in background so next call fast-paths.
               fetchReplyCache(supabaseAdmin).catch(() => {});
             }
+            if (cache && !cache.fastPathEnabled) metrics.fastPathDisabled++;
             if (cache && cache.fastPathEnabled) {
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
@@ -1494,16 +1586,22 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
                   // Inline webhook response: Telegram sends the reply in the
                   // same HTTP round-trip. Auto-delete of the bot's own reply
                   // is skipped in fast path (no message_id returned inline).
+                  metrics.fastPathHit++;
+                  recordLatency(Date.now() - __start);
                   return new Response(JSON.stringify(inline), {
                     status: 200,
                     headers: { "Content-Type": "application/json" },
                   });
                 }
+                metrics.fastPathMiss++;
+              } else {
+                metrics.fastPathMiss++;
               }
             }
           }
 
         } catch (err) {
+          metrics.errors++;
           console.error("Telegram fast-path error:", err);
         }
 
@@ -1514,8 +1612,13 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             await handleMessage(token, adminId, supabaseAdmin, msg);
           }
         } catch (err) {
+          metrics.errors++;
           console.error("Telegram webhook error:", err);
         }
+
+        const __elapsed = Date.now() - __start;
+        recordLatency(__elapsed);
+        if (__elapsed > 1000) console.warn(`[webhook] slow update ${update?.update_id} took ${__elapsed}ms`);
 
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,

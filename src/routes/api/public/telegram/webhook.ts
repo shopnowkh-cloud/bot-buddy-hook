@@ -61,6 +61,79 @@ let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 const groupTrackCache = new Map<number, number>();
 
+// ---------------------------------------------------------------------------
+// Metrics: latency + cache hit-rate + fast-path counters. In-memory per isolate.
+// Exposed via GET /api/public/telegram/webhook?metrics=1&secret=<TELEGRAM_WEBHOOK_SECRET>
+// ---------------------------------------------------------------------------
+type Metrics = {
+  startedAt: number;
+  updates: number;
+  deduped: number;
+  cacheHit: number;      // reply cache warm at request time
+  cacheMiss: number;     // reply cache cold at request time
+  fastPathHit: number;   // served inline (single reply, group)
+  fastPathMiss: number;  // eligible group text but no inline reply produced
+  fastPathDisabled: number;
+  errors: number;
+  latencies: number[];   // ring buffer of last N request durations (ms)
+};
+const METRICS_RING = 500;
+const metrics: Metrics = {
+  startedAt: Date.now(),
+  updates: 0,
+  deduped: 0,
+  cacheHit: 0,
+  cacheMiss: 0,
+  fastPathHit: 0,
+  fastPathMiss: 0,
+  fastPathDisabled: 0,
+  errors: 0,
+  latencies: [],
+};
+function recordLatency(ms: number) {
+  if (metrics.latencies.length >= METRICS_RING) metrics.latencies.shift();
+  metrics.latencies.push(ms);
+}
+function percentile(sorted: number[], p: number): number {
+  if (!sorted.length) return 0;
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+function snapshotMetrics() {
+  const sorted = [...metrics.latencies].sort((a, b) => a - b);
+  const total = metrics.cacheHit + metrics.cacheMiss;
+  const fastTotal = metrics.fastPathHit + metrics.fastPathMiss + metrics.fastPathDisabled;
+  return {
+    uptime_ms: Date.now() - metrics.startedAt,
+    updates: metrics.updates,
+    deduped: metrics.deduped,
+    errors: metrics.errors,
+    cache: {
+      hit: metrics.cacheHit,
+      miss: metrics.cacheMiss,
+      hit_rate: total ? +(metrics.cacheHit / total).toFixed(4) : 0,
+      warm: replyCache !== null,
+      ttl_ms: REPLY_CACHE_TTL_MS,
+    },
+    fast_path: {
+      hit: metrics.fastPathHit,
+      miss: metrics.fastPathMiss,
+      disabled: metrics.fastPathDisabled,
+      hit_rate: fastTotal ? +(metrics.fastPathHit / fastTotal).toFixed(4) : 0,
+    },
+    latency_ms: {
+      samples: sorted.length,
+      min: sorted[0] ?? 0,
+      p50: percentile(sorted, 50),
+      p90: percentile(sorted, 90),
+      p95: percentile(sorted, 95),
+      p99: percentile(sorted, 99),
+      max: sorted[sorted.length - 1] ?? 0,
+      avg: sorted.length ? +(sorted.reduce((a, b) => a + b, 0) / sorted.length).toFixed(2) : 0,
+    },
+  };
+}
+
 // ---- update_id dedup (Telegram retries updates when the webhook is slow) ----
 const seenUpdates = new Map<number, number>();
 const UPDATE_DEDUP_TTL_MS = 5 * 60_000;

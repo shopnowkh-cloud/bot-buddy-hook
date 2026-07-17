@@ -1,4 +1,0 @@
-# Copy this to .dev.vars for local `wrangler dev` sessions.
-# NEVER commit .dev.vars (already in .gitignore below).
-BOT_SYNC_URL="https://bot-buddy-hook.lovable.app/api/public/bot/bridge"
-BOT_SYNC_SECRET="paste-the-same-value-you-set-on-lovable-here"

@@ -80,6 +80,10 @@ type Metrics = {
   fastPathDisabled: number;
   errors: number;
   latencies: number[];   // ring buffer of last N request durations (ms)
+  prewarmAttempts: number;
+  prewarmSuccess: number;
+  prewarmFailure: number;
+  prewarmMs: number;     // duration of last successful prewarm
 };
 const METRICS_RING = 500;
 const metrics: Metrics = {
@@ -93,6 +97,10 @@ const metrics: Metrics = {
   fastPathDisabled: 0,
   errors: 0,
   latencies: [],
+  prewarmAttempts: 0,
+  prewarmSuccess: 0,
+  prewarmFailure: 0,
+  prewarmMs: 0,
 };
 function recordLatency(ms: number) {
   if (metrics.latencies.length >= METRICS_RING) metrics.latencies.shift();

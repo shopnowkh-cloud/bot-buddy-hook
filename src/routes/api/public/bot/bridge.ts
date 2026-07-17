@@ -86,6 +86,30 @@ const RequestSchema = z.discriminatedUnion("action", [
     days: z.number().int().min(1).max(365).optional(),
     limit: z.number().int().min(1).max(50).optional(),
   }),
+  z.object({ action: z.literal("list_schedules") }),
+  z.object({ action: z.literal("list_groups") }),
+  z.object({
+    action: z.literal("create_schedule"),
+    keyword: z.string().min(1).max(255),
+    group_chat_id: z.number().int(),
+    group_title: z.string().max(255).nullable().optional(),
+    repeat_daily: z.boolean(),
+    daily_time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+    scheduled_at: z.string().datetime().nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("update_schedule"),
+    id: z.number().int().positive(),
+    keyword: z.string().min(1).max(255).optional(),
+    group_chat_id: z.number().int().optional(),
+    group_title: z.string().max(255).nullable().optional(),
+    repeat_daily: z.boolean().optional(),
+    daily_time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+    scheduled_at: z.string().datetime().nullable().optional(),
+    enabled: z.boolean().optional(),
+  }),
+  z.object({ action: z.literal("delete_schedule"), id: z.number().int().positive() }),
+  z.object({ action: z.literal("toggle_schedule"), id: z.number().int().positive(), enabled: z.boolean() }),
 ]);
 
 function jerr(status: number, msg: string) {

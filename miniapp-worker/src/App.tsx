@@ -276,7 +276,7 @@ function fmtDelay(s: number | null | undefined): string {
   return `${s} វិនាទី`;
 }
 
-type Tab = "stats" | "analytics" | "keywords" | "groups" | "schedule" | "timer" | "pending" | "admins";
+type Tab = "stats" | "analytics" | "keywords" | "groups" | "inbox" | "schedule" | "timer" | "pending" | "admins";
 
 function MiniApp() {
   const [ready, setReady] = useState(false);

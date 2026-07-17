@@ -43,6 +43,7 @@ import {
   TrendingUp,
   Users,
   Flame,
+  CalendarClock,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -274,7 +275,7 @@ function fmtDelay(s: number | null | undefined): string {
   return `${s} វិនាទី`;
 }
 
-type Tab = "stats" | "analytics" | "keywords" | "timer" | "pending" | "admins";
+type Tab = "stats" | "analytics" | "keywords" | "schedule" | "timer" | "pending" | "admins";
 
 function MiniApp() {
   const [ready, setReady] = useState(false);
@@ -349,6 +350,7 @@ function MiniApp() {
           {tab === "stats" && <StatsPanel onGo={setTab} />}
           {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
+          {tab === "schedule" && <SchedulePanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}
           {tab === "admins" && <AdminsPanel />}
@@ -357,10 +359,11 @@ function MiniApp() {
 
       {/* Bottom tab bar — large clear buttons */}
       <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
-        <div className="grid grid-cols-6 gap-1 px-1 py-2">
+        <div className="grid grid-cols-7 gap-0.5 px-1 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
           <TabBtn icon={<TrendingUp />} label="វិភាគ" active={tab === "analytics"} onClick={() => { hapticImpact(); setTab("analytics"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
+          <TabBtn icon={<CalendarClock />} label="កំណត់ពេល" active={tab === "schedule"} onClick={() => { hapticImpact(); setTab("schedule"); }} />
           <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
           <TabBtn icon={<ListChecks />} label="Pending" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />
           <TabBtn icon={<Shield />} label="Admin" active={tab === "admins"} onClick={() => { hapticImpact(); setTab("admins"); }} />
@@ -1348,4 +1351,280 @@ function AdminsPanel() {
     </div>
   );
 }
+
+type Schedule = {
+  id: number;
+  keyword: string;
+  group_chat_id: number;
+  group_title: string | null;
+  repeat_daily: boolean;
+  daily_time: string | null;
+  scheduled_at: string | null;
+  enabled: boolean;
+  last_sent_at: string | null;
+};
+type TgGroup = { chat_id: number; title: string | null; is_member: boolean };
+
+function SchedulePanel() {
+  const qc = useQueryClient();
+  const listQ = useQuery({
+    queryKey: ["schedules"],
+    queryFn: () => callApi<{ schedules: Schedule[] }>("list_schedules"),
+  });
+  const groupsQ = useQuery({
+    queryKey: ["tg_groups"],
+    queryFn: () => callApi<{ groups: TgGroup[] }>("list_groups"),
+  });
+  const repliesQ = useQuery({
+    queryKey: ["replies_simple"],
+    queryFn: () => callApi<{ replies: Reply[] }>("list_replies"),
+  });
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Schedule | null>(null);
+
+  const del = useMutation({
+    mutationFn: (id: number) => callApi("delete_schedule", { id }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); toast.success("បានលុប"); },
+    onError: (e: any) => toast.error(e?.message ?? "លុបមិនបាន"),
+  });
+  const toggle = useMutation({
+    mutationFn: (v: { id: number; enabled: boolean }) => callApi("toggle_schedule", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+
+  const schedules = listQ.data?.schedules ?? [];
+  const groups = groupsQ.data?.groups ?? [];
+  const keywords = repliesQ.data?.replies?.map((r) => r.keyword) ?? [];
+
+  return (
+    <div className="space-y-3 pt-2">
+      <SectionTitle>សារកំណត់ពេល</SectionTitle>
+
+      <button
+        onClick={() => { hapticImpact("medium"); setEditing(null); setOpen(true); }}
+        className="w-full h-14 rounded-2xl bg-[var(--tg-btn)] text-white font-semibold flex items-center justify-center gap-2 active:scale-[0.98] shadow-lg"
+      >
+        <Plus className="h-5 w-5" /> បន្ថែមកាលវិភាគថ្មី
+      </button>
+
+      <div className="tg-card p-2 divide-y divide-white/10">
+        {listQ.isLoading ? (
+          <div className="p-4 tg-hint text-sm text-center">កំពុងផ្ទុក…</div>
+        ) : schedules.length === 0 ? (
+          <div className="p-4 tg-hint text-sm text-center">មិនទាន់មានកាលវិភាគ</div>
+        ) : (
+          schedules.map((s) => (
+            <div key={s.id} className="p-3 flex items-center gap-3">
+              <div className={`h-10 w-10 rounded-xl grid place-items-center ${s.enabled ? "bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]" : "bg-black/5 text-[var(--tg-hint)]"}`}>
+                <CalendarClock className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold truncate flex items-center gap-1.5">
+                  <Hash className="h-3.5 w-3.5 tg-hint" />
+                  {s.keyword}
+                </p>
+                <p className="tg-hint text-xs truncate">
+                  {s.group_title || `Chat ${s.group_chat_id}`}
+                </p>
+                <p className="text-xs mt-0.5">
+                  {s.repeat_daily
+                    ? <>🔁 រាល់ថ្ងៃ · <b>{s.daily_time}</b> (Phnom Penh)</>
+                    : <>📅 {s.scheduled_at ? new Date(s.scheduled_at).toLocaleString() : "—"}</>}
+                </p>
+              </div>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => { hapticImpact(); toggle.mutate({ id: s.id, enabled: !s.enabled }); }}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-semibold ${s.enabled ? "bg-green-500/15 text-green-600" : "bg-black/10 text-[var(--tg-hint)]"}`}
+                >
+                  {s.enabled ? "បើក" : "បិទ"}
+                </button>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => { hapticImpact(); setEditing(s); setOpen(true); }}
+                    className="h-8 w-8 rounded-lg bg-[var(--tg-section)] grid place-items-center"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => { if (confirm("លុបកាលវិភាគនេះ?")) del.mutate(s.id); }}
+                    className="h-8 w-8 rounded-lg bg-red-500/10 text-red-600 grid place-items-center"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {open && (
+        <ScheduleEditor
+          initial={editing}
+          keywords={keywords}
+          groups={groups}
+          onClose={() => setOpen(false)}
+          onSaved={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["schedules"] }); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScheduleEditor({
+  initial,
+  keywords,
+  groups,
+  onClose,
+  onSaved,
+}: {
+  initial: Schedule | null;
+  keywords: string[];
+  groups: TgGroup[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [keyword, setKeyword] = useState(initial?.keyword ?? keywords[0] ?? "");
+  const [groupId, setGroupId] = useState<string>(String(initial?.group_chat_id ?? groups[0]?.chat_id ?? ""));
+  const [repeat, setRepeat] = useState<boolean>(initial?.repeat_daily ?? true);
+  const [dailyTime, setDailyTime] = useState(initial?.daily_time ?? "09:00");
+  const [oneTimeLocal, setOneTimeLocal] = useState(() => {
+    if (initial?.scheduled_at) {
+      const d = new Date(initial.scheduled_at);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    return "";
+  });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!keyword) throw new Error("ជ្រើសរើសពាក្យគន្លឹះ");
+      if (!groupId) throw new Error("ជ្រើសរើស Group");
+      const gid = Number(groupId);
+      const group = groups.find((g) => g.chat_id === gid);
+      const payload: Record<string, unknown> = {
+        keyword,
+        group_chat_id: gid,
+        group_title: group?.title ?? null,
+        repeat_daily: repeat,
+      };
+      if (repeat) {
+        if (!/^\d{2}:\d{2}$/.test(dailyTime)) throw new Error("ម៉ោងមិនត្រឹមត្រូវ");
+        payload.daily_time = dailyTime;
+        payload.scheduled_at = null;
+      } else {
+        if (!oneTimeLocal) throw new Error("ជ្រើសរើសកាលបរិច្ឆេទ");
+        payload.scheduled_at = new Date(oneTimeLocal).toISOString();
+        payload.daily_time = null;
+      }
+      if (initial) {
+        return callApi("update_schedule", { id: initial.id, ...payload });
+      }
+      return callApi("create_schedule", payload);
+    },
+    onSuccess: () => { toast.success(initial ? "បានធ្វើបច្ចុប្បន្នភាព" : "បានបន្ថែម"); onSaved(); },
+    onError: (e: any) => toast.error(e?.message ?? "រក្សាទុកមិនបាន"),
+  });
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ background: "rgba(15,23,42,0.55)" }}
+      onClick={onClose}
+    >
+      <div
+        className="tg-app w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-4 space-y-3 max-h-[92vh] overflow-y-auto"
+        style={{ background: "#ffffff", color: "#0f172a" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-lg">{initial ? "កែកាលវិភាគ" : "កាលវិភាគថ្មី"}</h3>
+          <button onClick={onClose} className="h-9 w-9 rounded-full grid place-items-center bg-black/5">
+            ✕
+          </button>
+        </div>
+
+        <div>
+          <Label className="text-xs">ពាក្យគន្លឹះ</Label>
+          <select
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            className="w-full h-11 rounded-xl border border-black/10 bg-white px-3 mt-1"
+          >
+            {keywords.length === 0 && <option value="">(មិនទាន់មានពាក្យគន្លឹះ)</option>}
+            {keywords.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <Label className="text-xs">Group គោលដៅ</Label>
+          <select
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value)}
+            className="w-full h-11 rounded-xl border border-black/10 bg-white px-3 mt-1"
+          >
+            {groups.length === 0 && <option value="">(មិនទាន់មាន Group — បន្ថែម bot ក្នុង group មុន)</option>}
+            {groups.map((g) => (
+              <option key={g.chat_id} value={g.chat_id}>
+                {g.title || `Chat ${g.chat_id}`}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setRepeat(true)}
+            className={`flex-1 h-11 rounded-xl font-semibold text-sm ${repeat ? "bg-[var(--tg-btn)] text-white" : "bg-black/5"}`}
+          >
+            🔁 រាល់ថ្ងៃ
+          </button>
+          <button
+            onClick={() => setRepeat(false)}
+            className={`flex-1 h-11 rounded-xl font-semibold text-sm ${!repeat ? "bg-[var(--tg-btn)] text-white" : "bg-black/5"}`}
+          >
+            📅 មួយដង
+          </button>
+        </div>
+
+        {repeat ? (
+          <div>
+            <Label className="text-xs">ម៉ោង (Phnom Penh, HH:MM)</Label>
+            <Input
+              type="time"
+              value={dailyTime}
+              onChange={(e) => setDailyTime(e.target.value)}
+              className="mt-1 h-11 rounded-xl"
+            />
+          </div>
+        ) : (
+          <div>
+            <Label className="text-xs">កាលបរិច្ឆេទ &amp; ម៉ោង</Label>
+            <Input
+              type="datetime-local"
+              value={oneTimeLocal}
+              onChange={(e) => setOneTimeLocal(e.target.value)}
+              className="mt-1 h-11 rounded-xl"
+            />
+          </div>
+        )}
+
+        <Button
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          className="w-full h-12 rounded-xl bg-[var(--tg-btn)] text-white font-semibold"
+        >
+          {save.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Save className="h-5 w-5 mr-2" /> រក្សាទុក</>}
+        </Button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 

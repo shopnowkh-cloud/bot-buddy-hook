@@ -311,7 +311,7 @@ function MiniApp() {
     );
   }
 
-  // Open access — no auth gate. Any error is surfaced by individual panels.
+  // Auth: server verifies Telegram initData (or ?token= admin bypass). Panels surface 401s.
 
   return (
     <div className="tg-app min-h-screen flex flex-col">

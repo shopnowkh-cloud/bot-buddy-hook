@@ -50,6 +50,20 @@ let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 const groupTrackCache = new Map<number, number>();
 
+// ---- update_id dedup (Telegram retries updates when the webhook is slow) ----
+const seenUpdates = new Map<number, number>();
+const UPDATE_DEDUP_TTL_MS = 5 * 60_000;
+function isDuplicateUpdate(id: number | undefined): boolean {
+  if (typeof id !== "number") return false;
+  const now = Date.now();
+  if (seenUpdates.size > 500) {
+    for (const [k, t] of seenUpdates) if (now - t > UPDATE_DEDUP_TTL_MS) seenUpdates.delete(k);
+  }
+  if (seenUpdates.has(id)) return true;
+  seenUpdates.set(id, now);
+  return false;
+}
+
 export function clearReplyCache() {
   replyCache = null;
   replyCachePromise = null;

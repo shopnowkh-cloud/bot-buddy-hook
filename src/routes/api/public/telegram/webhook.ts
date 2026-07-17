@@ -78,6 +78,8 @@ type Metrics = {
   fastPathHit: number;   // served inline (single reply, group)
   fastPathMiss: number;  // eligible group text but no inline reply produced
   fastPathDisabled: number;
+  fastPathAlbum: number; // served inline as copyMessages/forwardMessages
+  fastPathMulti: number; // served inline + background follow-ups
   errors: number;
   latencies: number[];   // ring buffer of last N request durations (ms)
   prewarmAttempts: number;

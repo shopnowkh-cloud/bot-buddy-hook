@@ -668,6 +668,18 @@ async function saveConfig(supabase: any, seconds: number) {
   clearReplyCache();
 }
 
+async function loadFastPathEnabled(supabase: any): Promise<boolean> {
+  const cache = await loadReplyCache(supabase);
+  return cache.fastPathEnabled;
+}
+
+async function saveFastPathEnabled(supabase: any, enabled: boolean) {
+  await supabase
+    .from("bot_config")
+    .upsert({ id: 1, fast_path_enabled: enabled, updated_at: new Date().toISOString() });
+  clearReplyCache();
+}
+
 async function getReplyByKeyword(supabase: any, keyword: string) {
   const cache = await loadReplyCache(supabase);
   return cache.replies.get(keyword) ?? null;

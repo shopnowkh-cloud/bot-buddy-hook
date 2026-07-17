@@ -10,6 +10,7 @@ export const Route = createFileRoute("/api/public/telegram/register-webhook")({
       GET: async ({ request }) => {
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+        const bridgeSecret = process.env.BOT_SYNC_SECRET;
         if (!token || !secret) {
           return new Response(
             JSON.stringify({ ok: false, error: "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_WEBHOOK_SECRET" }),
@@ -18,6 +19,16 @@ export const Route = createFileRoute("/api/public/telegram/register-webhook")({
         }
 
         const url = new URL(request.url);
+        // Gate: require ?secret=BOT_SYNC_SECRET so random visitors can't reset the webhook.
+        if (bridgeSecret) {
+          const provided = url.searchParams.get("secret") ?? "";
+          if (provided !== bridgeSecret) {
+            return new Response(
+              JSON.stringify({ ok: false, error: "Unauthorized: pass ?secret=BOT_SYNC_SECRET" }),
+              { status: 401, headers: { "Content-Type": "application/json" } },
+            );
+          }
+        }
         const origin = url.origin;
         if (url.protocol !== "https:") {
           return new Response(

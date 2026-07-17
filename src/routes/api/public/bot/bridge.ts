@@ -110,6 +110,24 @@ const RequestSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("delete_schedule"), id: z.number().int().positive() }),
   z.object({ action: z.literal("toggle_schedule"), id: z.number().int().positive(), enabled: z.boolean() }),
+  z.object({ action: z.literal("list_groups_all") }),
+  z.object({ action: z.literal("leave_group"), chat_id: z.number().int() }),
+  z.object({ action: z.literal("refresh_group"), chat_id: z.number().int() }),
+  z.object({
+    action: z.literal("send_to_group"),
+    chat_id: z.number().int(),
+    keyword: z.string().min(1).max(255),
+  }),
+  z.object({
+    action: z.literal("broadcast_text"),
+    text: z.string().min(1).max(4096),
+    chat_ids: z.array(z.number().int()).min(1).max(500).optional(),
+  }),
+  z.object({
+    action: z.literal("broadcast_keyword"),
+    keyword: z.string().min(1).max(255),
+    chat_ids: z.array(z.number().int()).min(1).max(500).optional(),
+  }),
 ]);
 
 function jerr(status: number, msg: string) {
@@ -421,6 +439,105 @@ export const Route = createFileRoute("/api/public/bot/bridge")({
                 .eq("id", req.id);
               if (error) return jerr(500, error.message);
               return jok({ ok: true });
+            }
+            case "list_groups_all": {
+              const { data, error } = await s
+                .from("tg_groups")
+                .select("chat_id, title, is_member, updated_at")
+                .order("updated_at", { ascending: false })
+                .limit(500);
+              if (error) return jerr(500, error.message);
+              return jok({ groups: data ?? [] });
+            }
+            case "leave_group": {
+              const token = process.env.TELEGRAM_BOT_TOKEN;
+              if (!token) return jerr(500, "TELEGRAM_BOT_TOKEN not configured");
+              const { tgRequest } = await import("@/routes/api/public/telegram/webhook");
+              const res = await tgRequest(token, "leaveChat", { chat_id: req.chat_id });
+              await s
+                .from("tg_groups")
+                .update({ is_member: false, updated_at: new Date().toISOString() })
+                .eq("chat_id", req.chat_id);
+              if (!res?.ok) return jerr(500, res?.description ?? "leaveChat failed");
+              return jok({ ok: true });
+            }
+            case "refresh_group": {
+              const token = process.env.TELEGRAM_BOT_TOKEN;
+              if (!token) return jerr(500, "TELEGRAM_BOT_TOKEN not configured");
+              const { tgRequest } = await import("@/routes/api/public/telegram/webhook");
+              const res = await tgRequest(token, "getChat", { chat_id: req.chat_id });
+              if (!res?.ok) return jerr(500, res?.description ?? "getChat failed");
+              await s.from("tg_groups").upsert(
+                {
+                  chat_id: req.chat_id,
+                  title: res.result?.title ?? null,
+                  is_member: true,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: "chat_id" },
+              );
+              return jok({ ok: true, group: res.result });
+            }
+            case "send_to_group": {
+              const token = process.env.TELEGRAM_BOT_TOKEN;
+              if (!token) return jerr(500, "TELEGRAM_BOT_TOKEN not configured");
+              const { data: reply, error } = await s
+                .from("replies")
+                .select("content, delete_after_seconds")
+                .eq("keyword", req.keyword)
+                .maybeSingle();
+              if (error) return jerr(500, error.message);
+              if (!reply) return jerr(404, "keyword not found");
+              const { sendReplies, loadConfig } = await import("@/routes/api/public/telegram/webhook");
+              const effective =
+                reply.delete_after_seconds ?? (await loadConfig(s));
+              await sendReplies(token, s, req.chat_id, reply.content, effective);
+              return jok({ ok: true });
+            }
+            case "broadcast_text": {
+              const token = process.env.TELEGRAM_BOT_TOKEN;
+              if (!token) return jerr(500, "TELEGRAM_BOT_TOKEN not configured");
+              const { tgRequest } = await import("@/routes/api/public/telegram/webhook");
+              let chatIds = req.chat_ids ?? [];
+              if (chatIds.length === 0) {
+                const { data } = await s.from("tg_groups").select("chat_id").eq("is_member", true);
+                chatIds = (data ?? []).map((g) => g.chat_id);
+              }
+              const results: { chat_id: number; ok: boolean; error?: string }[] = [];
+              for (const cid of chatIds) {
+                const res = await tgRequest(token, "sendMessage", { chat_id: cid, text: req.text });
+                results.push({ chat_id: cid, ok: !!res?.ok, error: res?.ok ? undefined : res?.description });
+              }
+              return jok({ ok: true, sent: results.filter((r) => r.ok).length, total: results.length, results });
+            }
+            case "broadcast_keyword": {
+              const token = process.env.TELEGRAM_BOT_TOKEN;
+              if (!token) return jerr(500, "TELEGRAM_BOT_TOKEN not configured");
+              const { data: reply, error } = await s
+                .from("replies")
+                .select("content, delete_after_seconds")
+                .eq("keyword", req.keyword)
+                .maybeSingle();
+              if (error) return jerr(500, error.message);
+              if (!reply) return jerr(404, "keyword not found");
+              let chatIds = req.chat_ids ?? [];
+              if (chatIds.length === 0) {
+                const { data } = await s.from("tg_groups").select("chat_id").eq("is_member", true);
+                chatIds = (data ?? []).map((g) => g.chat_id);
+              }
+              const { sendReplies, loadConfig } = await import("@/routes/api/public/telegram/webhook");
+              const effective =
+                reply.delete_after_seconds ?? (await loadConfig(s));
+              const results: { chat_id: number; ok: boolean; error?: string }[] = [];
+              for (const cid of chatIds) {
+                try {
+                  await sendReplies(token, s, cid, reply.content, effective);
+                  results.push({ chat_id: cid, ok: true });
+                } catch (e: any) {
+                  results.push({ chat_id: cid, ok: false, error: e?.message });
+                }
+              }
+              return jok({ ok: true, sent: results.filter((r) => r.ok).length, total: results.length, results });
             }
           }
         } catch (e: any) {

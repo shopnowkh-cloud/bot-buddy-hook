@@ -275,7 +275,7 @@ function fmtDelay(s: number | null | undefined): string {
   return `${s} វិនាទី`;
 }
 
-type Tab = "stats" | "analytics" | "keywords" | "schedule" | "timer" | "pending" | "admins";
+type Tab = "stats" | "analytics" | "keywords" | "groups" | "schedule" | "timer" | "pending" | "admins";
 
 function MiniApp() {
   const [ready, setReady] = useState(false);
@@ -350,6 +350,7 @@ function MiniApp() {
           {tab === "stats" && <StatsPanel onGo={setTab} />}
           {tab === "analytics" && <AnalyticsPanel />}
           {tab === "keywords" && <KeywordsPanel />}
+          {tab === "groups" && <GroupsPanel />}
           {tab === "schedule" && <SchedulePanel />}
           {tab === "timer" && <TimerPanel />}
           {tab === "pending" && <PendingPanel />}
@@ -359,13 +360,14 @@ function MiniApp() {
 
       {/* Bottom tab bar — large clear buttons */}
       <nav className="tg-anim-nav fixed bottom-0 inset-x-0 bg-[var(--tg-section)] border-t border-white/5 pb-safe backdrop-blur-md">
-        <div className="grid grid-cols-7 gap-0.5 px-1 py-2">
+        <div className="grid grid-cols-8 gap-0.5 px-1 py-2">
           <TabBtn icon={<BarChart3 />} label="ស្ថិតិ" active={tab === "stats"} onClick={() => { hapticImpact(); setTab("stats"); }} />
           <TabBtn icon={<TrendingUp />} label="វិភាគ" active={tab === "analytics"} onClick={() => { hapticImpact(); setTab("analytics"); }} />
           <TabBtn icon={<MessageSquareText />} label="ពាក្យ" active={tab === "keywords"} onClick={() => { hapticImpact(); setTab("keywords"); }} />
-          <TabBtn icon={<CalendarClock />} label="កំណត់ពេល" active={tab === "schedule"} onClick={() => { hapticImpact(); setTab("schedule"); }} />
+          <TabBtn icon={<Users />} label="Groups" active={tab === "groups"} onClick={() => { hapticImpact(); setTab("groups"); }} />
+          <TabBtn icon={<CalendarClock />} label="ពេល" active={tab === "schedule"} onClick={() => { hapticImpact(); setTab("schedule"); }} />
           <TabBtn icon={<Timer />} label="Timer" active={tab === "timer"} onClick={() => { hapticImpact(); setTab("timer"); }} />
-          <TabBtn icon={<ListChecks />} label="Pending" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />
+          <TabBtn icon={<ListChecks />} label="Pend" active={tab === "pending"} onClick={() => { hapticImpact(); setTab("pending"); }} />
           <TabBtn icon={<Shield />} label="Admin" active={tab === "admins"} onClick={() => { hapticImpact(); setTab("admins"); }} />
         </div>
       </nav>
@@ -1643,3 +1645,314 @@ function ScheduleEditor({
 }
 
 
+
+// ============================================================================
+// GroupsPanel — manage Telegram groups: view, refresh title, remove bot,
+// broadcast text, send a keyword reply to one or all groups.
+// ============================================================================
+type TgGroupFull = { chat_id: number; title: string | null; is_member: boolean; updated_at?: string };
+
+function GroupsPanel() {
+  const qc = useQueryClient();
+  const listQ = useQuery({
+    queryKey: ["tg_groups_all"],
+    queryFn: () => callApi<{ groups: TgGroupFull[] }>("list_groups_all"),
+  });
+  const repliesQ = useQuery({
+    queryKey: ["replies_simple"],
+    queryFn: () => callApi<{ replies: Reply[] }>("list_replies"),
+  });
+
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [sendKwOpen, setSendKwOpen] = useState<TgGroupFull | null>(null);
+
+  const leave = useMutation({
+    mutationFn: (chat_id: number) => callApi("leave_group", { chat_id }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tg_groups_all"] }); qc.invalidateQueries({ queryKey: ["tg_groups"] }); toast.success("Bot ចាកចេញរួច"); },
+    onError: (e: any) => toast.error(e?.message ?? "ចាកចេញមិនបាន"),
+  });
+  const refresh = useMutation({
+    mutationFn: (chat_id: number) => callApi("refresh_group", { chat_id }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tg_groups_all"] }); toast.success("ធ្វើបច្ចុប្បន្នភាព"); },
+    onError: (e: any) => toast.error(e?.message ?? "បរាជ័យ"),
+  });
+
+  const groups = listQ.data?.groups ?? [];
+  const active = groups.filter((g) => g.is_member);
+  const inactive = groups.filter((g) => !g.is_member);
+  const keywords = repliesQ.data?.replies?.map((r) => r.keyword) ?? [];
+
+  return (
+    <div className="space-y-3 pt-2">
+      <SectionTitle>ក្រុមរបស់ Bot ({active.length})</SectionTitle>
+
+      <button
+        onClick={() => { hapticImpact("medium"); setBroadcastOpen(true); }}
+        className="w-full h-14 rounded-2xl bg-[var(--tg-btn)] text-white font-semibold flex items-center justify-center gap-2 active:scale-[0.98] shadow-lg"
+      >
+        <Send className="h-5 w-5" /> ផ្ញើសារទៅគ្រប់ Group
+      </button>
+
+      <div className="tg-card p-2 divide-y divide-white/10">
+        {listQ.isLoading ? (
+          <div className="p-4 tg-hint text-sm text-center">កំពុងផ្ទុក…</div>
+        ) : active.length === 0 ? (
+          <div className="p-4 tg-hint text-sm text-center">មិនទាន់មាន Group ណាមួយ — សូមបន្ថែម bot ចូល group មុន</div>
+        ) : (
+          active.map((g) => (
+            <div key={g.chat_id} className="p-3 flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl grid place-items-center bg-[var(--tg-btn)]/15 text-[var(--tg-btn)]">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold truncate">{g.title || `Chat ${g.chat_id}`}</p>
+                <p className="tg-hint text-xs truncate">ID: {g.chat_id}</p>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  aria-label="ផ្ញើពាក្យបញ្ជា"
+                  onClick={() => { hapticImpact(); setSendKwOpen(g); }}
+                  className="h-9 w-9 rounded-lg bg-[var(--tg-section)] grid place-items-center"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+                <button
+                  aria-label="Refresh"
+                  onClick={() => { hapticImpact(); refresh.mutate(g.chat_id); }}
+                  className="h-9 w-9 rounded-lg bg-[var(--tg-section)] grid place-items-center"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+                <button
+                  aria-label="ដក bot ចេញ"
+                  onClick={() => {
+                    if (confirm(`ដក bot ចេញពី "${g.title || g.chat_id}"?`)) {
+                      hapticNotify("warning");
+                      leave.mutate(g.chat_id);
+                    }
+                  }}
+                  className="h-9 w-9 rounded-lg bg-red-500/10 text-red-600 grid place-items-center"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {inactive.length > 0 && (
+        <>
+          <SectionTitle>Group ដែល bot ចាកចេញរួច ({inactive.length})</SectionTitle>
+          <div className="tg-card p-2 divide-y divide-white/10">
+            {inactive.map((g) => (
+              <div key={g.chat_id} className="p-3 flex items-center gap-3 opacity-60">
+                <div className="h-10 w-10 rounded-xl grid place-items-center bg-black/10 text-[var(--tg-hint)]">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold truncate">{g.title || `Chat ${g.chat_id}`}</p>
+                  <p className="tg-hint text-xs truncate">ID: {g.chat_id}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {broadcastOpen && (
+        <BroadcastEditor
+          groups={active}
+          keywords={keywords}
+          onClose={() => setBroadcastOpen(false)}
+        />
+      )}
+      {sendKwOpen && (
+        <SendKeywordDialog
+          group={sendKwOpen}
+          keywords={keywords}
+          onClose={() => setSendKwOpen(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function BroadcastEditor({
+  groups,
+  keywords,
+  onClose,
+}: {
+  groups: TgGroupFull[];
+  keywords: string[];
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"text" | "keyword">("text");
+  const [text, setText] = useState("");
+  const [keyword, setKeyword] = useState(keywords[0] ?? "");
+  const [target, setTarget] = useState<"all" | "pick">("all");
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+
+  const run = useMutation({
+    mutationFn: async () => {
+      const chat_ids = target === "pick" ? [...picked] : undefined;
+      if (target === "pick" && (!chat_ids || chat_ids.length === 0)) {
+        throw new Error("សូមជ្រើសរើសយ៉ាងហោចណាស់មួយ Group");
+      }
+      if (mode === "text") {
+        if (!text.trim()) throw new Error("សូមបញ្ចូលអត្ថបទ");
+        return callApi<{ sent: number; total: number }>("broadcast_text", { text: text.trim(), chat_ids });
+      } else {
+        if (!keyword) throw new Error("សូមជ្រើសរើសពាក្យបញ្ជា");
+        return callApi<{ sent: number; total: number }>("broadcast_keyword", { keyword, chat_ids });
+      }
+    },
+    onSuccess: (r) => { toast.success(`បានផ្ញើ ${r.sent}/${r.total}`); onClose(); },
+    onError: (e: any) => toast.error(e?.message ?? "ផ្ញើមិនបាន"),
+  });
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] tg-app" style={{ background: "#f4f6f8", color: "#0f172a" }}>
+      <style>{tgStyles}</style>
+      <div className="h-full flex flex-col">
+        <header className="px-4 pt-4 pb-3 flex items-center gap-3 border-b border-black/5">
+          <button onClick={onClose} className="h-9 w-9 rounded-full bg-[var(--tg-section)] grid place-items-center">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <h1 className="text-base font-semibold">ផ្ញើសារជា Broadcast</h1>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setMode("text")}
+              className={`h-12 rounded-xl font-semibold ${mode === "text" ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}
+            >អត្ថបទផ្ទាល់</button>
+            <button
+              onClick={() => setMode("keyword")}
+              className={`h-12 rounded-xl font-semibold ${mode === "keyword" ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}
+            >ពាក្យបញ្ជា</button>
+          </div>
+
+          {mode === "text" ? (
+            <div>
+              <Label>អត្ថបទ</Label>
+              <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="សរសេរសាររបស់អ្នក..." />
+            </div>
+          ) : (
+            <div>
+              <Label>ពាក្យបញ្ជា</Label>
+              <select
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                className="w-full h-12 rounded-xl bg-[var(--tg-section)] px-3 mt-1"
+              >
+                {keywords.length === 0 && <option value="">(មិនមានពាក្យបញ្ជា)</option>}
+                {keywords.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <Label>គោលដៅ</Label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              <button
+                onClick={() => setTarget("all")}
+                className={`h-12 rounded-xl font-semibold ${target === "all" ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}
+              >គ្រប់ Group ({groups.length})</button>
+              <button
+                onClick={() => setTarget("pick")}
+                className={`h-12 rounded-xl font-semibold ${target === "pick" ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}
+              >ជ្រើសរើស ({picked.size})</button>
+            </div>
+          </div>
+
+          {target === "pick" && (
+            <div className="tg-card p-2 divide-y divide-white/10 max-h-72 overflow-y-auto">
+              {groups.map((g) => {
+                const on = picked.has(g.chat_id);
+                return (
+                  <button
+                    key={g.chat_id}
+                    onClick={() => {
+                      const s = new Set(picked);
+                      if (on) s.delete(g.chat_id); else s.add(g.chat_id);
+                      setPicked(s);
+                    }}
+                    className="w-full p-3 flex items-center gap-3 text-left"
+                  >
+                    <div className={`h-6 w-6 rounded-md grid place-items-center ${on ? "bg-[var(--tg-btn)] text-white" : "bg-[var(--tg-section)]"}`}>
+                      {on && <Check className="h-4 w-4" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold truncate text-sm">{g.title || `Chat ${g.chat_id}`}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-black/5">
+          <Button
+            className="w-full h-14 text-base"
+            disabled={run.isPending}
+            onClick={() => run.mutate()}
+          >
+            {run.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Send className="h-5 w-5 mr-2" /> ផ្ញើ</>}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function SendKeywordDialog({
+  group,
+  keywords,
+  onClose,
+}: {
+  group: TgGroupFull;
+  keywords: string[];
+  onClose: () => void;
+}) {
+  const [keyword, setKeyword] = useState(keywords[0] ?? "");
+  const run = useMutation({
+    mutationFn: () => {
+      if (!keyword) throw new Error("សូមជ្រើសរើសពាក្យបញ្ជា");
+      return callApi("send_to_group", { chat_id: group.chat_id, keyword });
+    },
+    onSuccess: () => { toast.success("បានផ្ញើ"); onClose(); },
+    onError: (e: any) => toast.error(e?.message ?? "ផ្ញើមិនបាន"),
+  });
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] tg-app grid place-items-center p-4" style={{ background: "rgba(0,0,0,0.4)" }}>
+      <style>{tgStyles}</style>
+      <div className="w-full max-w-md rounded-2xl p-4 space-y-3" style={{ background: "#ffffff", color: "#0f172a" }}>
+        <h2 className="font-semibold text-base">ផ្ញើពាក្យបញ្ជា</h2>
+        <p className="tg-hint text-xs truncate">ទៅ: {group.title || `Chat ${group.chat_id}`}</p>
+        <div>
+          <Label>ពាក្យបញ្ជា</Label>
+          <select
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            className="w-full h-12 rounded-xl bg-[var(--tg-section)] px-3 mt-1"
+          >
+            {keywords.length === 0 && <option value="">(មិនមានពាក្យបញ្ជា)</option>}
+            {keywords.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>បោះបង់</Button>
+          <Button disabled={run.isPending} onClick={() => run.mutate()}>
+            {run.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ផ្ញើ"}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}

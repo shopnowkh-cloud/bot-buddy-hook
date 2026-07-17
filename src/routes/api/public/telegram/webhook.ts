@@ -203,7 +203,7 @@ export function resetCommandsSyncSignature() {
 }
 
 
-async function tgRequest(token: string, method: string, body: TgRequestBody) {
+export async function tgRequest(token: string, method: string, body: TgRequestBody) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -469,7 +469,7 @@ async function scheduleReplyDelete(supabase: any, chatId: number, messageId: num
 
 // Send one or many replies (handles both legacy single-object and new array shapes)
 // replyMarkup is attached only to the LAST item to avoid duplicate keyboards.
-async function sendReplies(
+export async function sendReplies(
   token: string,
   supabase: any,
   chatId: number,
@@ -639,7 +639,7 @@ async function saveState(
     );
 }
 
-async function loadConfig(supabase: any): Promise<number> {
+export async function loadConfig(supabase: any): Promise<number> {
   const cache = await loadReplyCache(supabase);
   return cache.config;
 }

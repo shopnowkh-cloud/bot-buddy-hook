@@ -127,6 +127,13 @@ function snapshotMetrics() {
       warm: replyCache !== null,
       ttl_ms: REPLY_CACHE_TTL_MS,
     },
+    prewarm: {
+      attempts: metrics.prewarmAttempts,
+      success: metrics.prewarmSuccess,
+      failure: metrics.prewarmFailure,
+      last_ms: metrics.prewarmMs,
+      inflight: prewarmInflight !== null,
+    },
     fast_path: {
       hit: metrics.fastPathHit,
       miss: metrics.fastPathMiss,

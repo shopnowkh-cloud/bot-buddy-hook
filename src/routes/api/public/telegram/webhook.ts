@@ -231,7 +231,7 @@ export const MAIN_KEYBOARD = {
   keyboard: [
     ["បន្ថែមពាក្យថ្មី"],
     ["បញ្ជីពាក្យ កែប្រែ&លុប"],
-    ["⏱ កំណត់ Timer លុបសារ"],
+    ["⏱ កំណត់ Timer លុបសារ", "⚡ Fast-Path"],
     ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
   ],
   resize_keyboard: true,

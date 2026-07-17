@@ -47,6 +47,7 @@ type ReplyCacheEntry = { content: any; delete_after_seconds: number | null };
 type ReplyCache = {
   expiresAt: number;
   config: number;
+  fastPathEnabled: boolean;
   replies: Map<string, ReplyCacheEntry>;
   rowsOrder: string[][];
   /** slash-command (without leading '/') → keyword */

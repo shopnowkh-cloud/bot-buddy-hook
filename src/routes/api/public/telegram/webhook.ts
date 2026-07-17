@@ -1406,7 +1406,20 @@ export async function handleMessage(token: string, adminId: number, supabase: an
 export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
     handlers: {
+      GET: async ({ request }) => {
+        const url = new URL(request.url);
+        const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
+        const provided = url.searchParams.get("secret") ?? request.headers.get("x-metrics-secret") ?? "";
+        if (!expectedSecret || !safeEqual(provided, expectedSecret)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        return new Response(JSON.stringify(snapshotMetrics(), null, 2), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
       POST: async ({ request }) => {
+        const __start = Date.now();
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const adminId = Number(process.env.ADMIN_CHAT_ID);
         const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -1429,8 +1442,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("Bad request", { status: 400 });
         }
 
+        metrics.updates++;
+
         // Idempotency: Telegram retries updates when the webhook is slow — dedupe.
         if (isDuplicateUpdate(update?.update_id)) {
+          metrics.deduped++;
+          recordLatency(Date.now() - __start);
           return new Response(JSON.stringify({ ok: true, deduped: true }), {
             status: 200,
             headers: { "Content-Type": "application/json" },

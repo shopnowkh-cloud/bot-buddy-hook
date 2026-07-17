@@ -65,16 +65,19 @@ export type Database = {
       bot_config: {
         Row: {
           delete_after_seconds: number
+          fast_path_enabled: boolean
           id: number
           updated_at: string
         }
         Insert: {
           delete_after_seconds?: number
+          fast_path_enabled?: boolean
           id?: number
           updated_at?: string
         }
         Update: {
           delete_after_seconds?: number
+          fast_path_enabled?: boolean
           id?: number
           updated_at?: string
         }

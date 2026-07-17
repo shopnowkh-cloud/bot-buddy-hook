@@ -1,0 +1,1 @@
+ALTER TABLE public.bot_config ADD COLUMN IF NOT EXISTS fast_path_enabled BOOLEAN NOT NULL DEFAULT TRUE;

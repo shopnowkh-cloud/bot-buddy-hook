@@ -1586,16 +1586,22 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
                   // Inline webhook response: Telegram sends the reply in the
                   // same HTTP round-trip. Auto-delete of the bot's own reply
                   // is skipped in fast path (no message_id returned inline).
+                  metrics.fastPathHit++;
+                  recordLatency(Date.now() - __start);
                   return new Response(JSON.stringify(inline), {
                     status: 200,
                     headers: { "Content-Type": "application/json" },
                   });
                 }
+                metrics.fastPathMiss++;
+              } else {
+                metrics.fastPathMiss++;
               }
             }
           }
 
         } catch (err) {
+          metrics.errors++;
           console.error("Telegram fast-path error:", err);
         }
 

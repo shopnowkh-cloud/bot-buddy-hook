@@ -1534,10 +1534,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           if (msg?.chat?.id && (msg.chat.type === "group" || msg.chat.type === "supergroup") && msg.text) {
             const { supabaseAdmin } = await getAdminClient();
             let cache = replyCache; // sync peek; only take fast path when cache is hot
+            if (cache) metrics.cacheHit++; else metrics.cacheMiss++;
             if (!cache) {
               // Cold isolate — warm cache in background so next call fast-paths.
               fetchReplyCache(supabaseAdmin).catch(() => {});
             }
+            if (cache && !cache.fastPathEnabled) metrics.fastPathDisabled++;
             if (cache && cache.fastPathEnabled) {
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;

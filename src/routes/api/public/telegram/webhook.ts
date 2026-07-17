@@ -21,13 +21,13 @@ function safeEqual(a: string, b: string): boolean {
 type TgRequestBody = Record<string, unknown>;
 
 // Preload admin client module at isolate startup so first webhook call skips import cost.
-// Also prewarm the reply cache so the group fast-path can serve the first request inline.
+// Also prewarm the reply cache (with retry + timeout) so the group fast-path can
+// serve the first request inline even on a cold isolate.
 let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.server")> | null =
   import("@/integrations/supabase/client.server")
     .then((mod) => {
-      // Fire-and-forget: warm the reply cache once the admin client is available.
       try {
-        fetchReplyCache(mod.supabaseAdmin).catch(() => {});
+        prewarmReplyCache(mod.supabaseAdmin).catch(() => {});
       } catch {}
       return mod;
     })
@@ -37,7 +37,11 @@ let _adminClientPromise: Promise<typeof import("@/integrations/supabase/client.s
     }) as any;
 function getAdminClient() {
   if (!_adminClientPromise) {
-    _adminClientPromise = import("@/integrations/supabase/client.server");
+    _adminClientPromise = import("@/integrations/supabase/client.server").then((mod) => {
+      // Kick off a prewarm on lazy client init too.
+      try { prewarmReplyCache(mod.supabaseAdmin).catch(() => {}); } catch {}
+      return mod;
+    });
   }
   return _adminClientPromise;
 }
@@ -76,6 +80,10 @@ type Metrics = {
   fastPathDisabled: number;
   errors: number;
   latencies: number[];   // ring buffer of last N request durations (ms)
+  prewarmAttempts: number;
+  prewarmSuccess: number;
+  prewarmFailure: number;
+  prewarmMs: number;     // duration of last successful prewarm
 };
 const METRICS_RING = 500;
 const metrics: Metrics = {
@@ -89,6 +97,10 @@ const metrics: Metrics = {
   fastPathDisabled: 0,
   errors: 0,
   latencies: [],
+  prewarmAttempts: 0,
+  prewarmSuccess: 0,
+  prewarmFailure: 0,
+  prewarmMs: 0,
 };
 function recordLatency(ms: number) {
   if (metrics.latencies.length >= METRICS_RING) metrics.latencies.shift();
@@ -114,6 +126,13 @@ function snapshotMetrics() {
       hit_rate: total ? +(metrics.cacheHit / total).toFixed(4) : 0,
       warm: replyCache !== null,
       ttl_ms: REPLY_CACHE_TTL_MS,
+    },
+    prewarm: {
+      attempts: metrics.prewarmAttempts,
+      success: metrics.prewarmSuccess,
+      failure: metrics.prewarmFailure,
+      last_ms: metrics.prewarmMs,
+      inflight: prewarmInflight !== null,
     },
     fast_path: {
       hit: metrics.fastPathHit,
@@ -196,12 +215,28 @@ function buildCommandMaps(keywords: string[]) {
 }
 
 
+// ---- Timeout + retry helpers for cache prewarm ---------------------------
+const CACHE_FETCH_TIMEOUT_MS = 2500;
+const PREWARM_MAX_ATTEMPTS = 4;
+const PREWARM_BACKOFF_MS = [150, 400, 1000, 2000];
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
 function fetchReplyCache(supabase: any): Promise<ReplyCache> {
   if (replyCachePromise) return replyCachePromise;
-  replyCachePromise = Promise.all([
+  const query = Promise.all([
     supabase.from("replies").select("keyword, content, delete_after_seconds, position, row_index").order("row_index").order("position").order("created_at"),
     supabase.from("bot_config").select("delete_after_seconds, fast_path_enabled").eq("id", 1).maybeSingle(),
-  ]).then(([replyResult, configResult]: any[]) => {
+  ]);
+  replyCachePromise = withTimeout(query, CACHE_FETCH_TIMEOUT_MS, "fetchReplyCache").then(([replyResult, configResult]: any[]) => {
     const replies = new Map<string, ReplyCacheEntry>();
     const rowsMap = new Map<number, string[]>();
     const orderedKeywords: string[] = [];
@@ -234,6 +269,35 @@ function fetchReplyCache(supabase: any): Promise<ReplyCache> {
     throw e;
   });
   return replyCachePromise;
+}
+
+// Fire-and-forget prewarm with retry + timeout. Safe to call repeatedly:
+// a single prewarm run is deduped across concurrent callers.
+let prewarmInflight: Promise<ReplyCache | null> | null = null;
+export function prewarmReplyCache(supabase: any): Promise<ReplyCache | null> {
+  if (replyCache && replyCache.expiresAt > Date.now()) return Promise.resolve(replyCache);
+  if (prewarmInflight) return prewarmInflight;
+  const start = Date.now();
+  metrics.prewarmAttempts++;
+  prewarmInflight = (async () => {
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < PREWARM_MAX_ATTEMPTS; attempt++) {
+      try {
+        const c = await fetchReplyCache(supabase);
+        metrics.prewarmSuccess++;
+        metrics.prewarmMs = Date.now() - start;
+        return c;
+      } catch (e) {
+        lastErr = e;
+        const backoff = PREWARM_BACKOFF_MS[attempt] ?? 2000;
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    }
+    metrics.prewarmFailure++;
+    console.warn("[webhook] prewarmReplyCache failed after retries:", lastErr);
+    return null;
+  })().finally(() => { prewarmInflight = null; });
+  return prewarmInflight;
 }
 
 
@@ -1536,8 +1600,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             let cache = replyCache; // sync peek; only take fast path when cache is hot
             if (cache) metrics.cacheHit++; else metrics.cacheMiss++;
             if (!cache) {
-              // Cold isolate — warm cache in background so next call fast-paths.
-              fetchReplyCache(supabaseAdmin).catch(() => {});
+              // Cold isolate — retrying prewarm in background so next call fast-paths.
+              prewarmReplyCache(supabaseAdmin).catch(() => {});
             }
             if (cache && !cache.fastPathEnabled) metrics.fastPathDisabled++;
             if (cache && cache.fastPathEnabled) {

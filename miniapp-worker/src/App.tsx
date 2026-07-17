@@ -234,12 +234,26 @@ function hapticNotify(type: "success" | "warning" | "error") {
   try { (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type); } catch {}
 }
 
+function getInitData(): string {
+  try { return (window as any).Telegram?.WebApp?.initData ?? ""; } catch { return ""; }
+}
+function getAdminTokenFromUrl(): string {
+  try {
+    const u = new URL(window.location.href);
+    return u.searchParams.get("token") ?? u.searchParams.get("admin_token") ?? "";
+  } catch { return ""; }
+}
+
 async function callApi<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = getInitData();
+  if (initData) headers["x-init-data"] = initData;
+  const adminToken = getAdminTokenFromUrl();
+  if (adminToken) headers["x-admin-token"] = adminToken;
+
   const res = await fetch("/api/miniapp", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({ action, ...payload }),
   });
   if (!res.ok) {
@@ -297,7 +311,7 @@ function MiniApp() {
     );
   }
 
-  // Open access — no auth gate. Any error is surfaced by individual panels.
+  // Auth: server verifies Telegram initData (or ?token= admin bypass). Panels surface 401s.
 
   return (
     <div className="tg-app min-h-screen flex flex-col">

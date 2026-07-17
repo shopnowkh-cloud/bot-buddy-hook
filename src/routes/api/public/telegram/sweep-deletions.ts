@@ -5,7 +5,12 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/public/telegram/sweep-deletions")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
+        const gate = process.env.BOT_SYNC_SECRET;
+        if (gate) {
+          const provided = request.headers.get("x-sync-secret") ?? "";
+          if (provided !== gate) return new Response("Unauthorized", { status: 401 });
+        }
         const token = process.env.TELEGRAM_BOT_TOKEN;
         if (!token) return new Response("Bot not configured", { status: 500 });
 

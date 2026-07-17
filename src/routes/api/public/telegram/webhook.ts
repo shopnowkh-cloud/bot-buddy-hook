@@ -50,6 +50,20 @@ let replyCache: ReplyCache | null = null;
 let replyCachePromise: Promise<ReplyCache> | null = null;
 const groupTrackCache = new Map<number, number>();
 
+// ---- update_id dedup (Telegram retries updates when the webhook is slow) ----
+const seenUpdates = new Map<number, number>();
+const UPDATE_DEDUP_TTL_MS = 5 * 60_000;
+function isDuplicateUpdate(id: number | undefined): boolean {
+  if (typeof id !== "number") return false;
+  const now = Date.now();
+  if (seenUpdates.size > 500) {
+    for (const [k, t] of seenUpdates) if (now - t > UPDATE_DEDUP_TTL_MS) seenUpdates.delete(k);
+  }
+  if (seenUpdates.has(id)) return true;
+  seenUpdates.set(id, now);
+  return false;
+}
+
 export function clearReplyCache() {
   replyCache = null;
   replyCachePromise = null;
@@ -1290,6 +1304,14 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("Bad request", { status: 400 });
         }
 
+        // Idempotency: Telegram retries updates when the webhook is slow — dedupe.
+        if (isDuplicateUpdate(update?.update_id)) {
+          return new Response(JSON.stringify({ ok: true, deduped: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
         // Auto-sync slash-commands on every incoming update (deduped by signature — cheap no-op when unchanged).
         (async () => {
           try {
@@ -1297,6 +1319,38 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             await syncBotCommands(token, supabaseAdmin);
           } catch {}
         })();
+
+        // ---- Handle my_chat_member: update tg_groups.is_member on add/remove ----
+        if (update.my_chat_member) {
+          try {
+            const cm = update.my_chat_member;
+            const chatId = cm.chat?.id;
+            const chatType = cm.chat?.type;
+            const status = cm.new_chat_member?.status;
+            const isMember = status === "member" || status === "administrator" || status === "creator";
+            if (chatId && (chatType === "group" || chatType === "supergroup")) {
+              const { supabaseAdmin } = await getAdminClient();
+              await supabaseAdmin
+                .from("tg_groups")
+                .upsert(
+                  {
+                    chat_id: chatId,
+                    title: cm.chat?.title ?? null,
+                    is_member: !!isMember,
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "chat_id" },
+                );
+              if (!isMember) groupTrackCache.delete(chatId);
+            }
+          } catch (err) {
+            console.error("my_chat_member handler error:", err);
+          }
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
 
         const msg = update.message ?? update.edited_message;
 

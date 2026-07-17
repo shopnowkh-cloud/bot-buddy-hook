@@ -84,7 +84,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type, x-bridge-secret",
+    "Access-Control-Allow-Headers": "content-type, x-bridge-secret, x-init-data, x-admin-token",
     "Access-Control-Max-Age": "86400",
   } as Record<string, string>;
 }
@@ -106,6 +106,33 @@ export const Route = createFileRoute("/api/public/bot/bridge")({
         const provided = request.headers.get("x-bridge-secret") ?? "";
         if (!timingSafeStrEq(provided, expected)) return jerr(401, "unauthorized");
 
+        // ---- End-user auth: verify Telegram Mini App initData OR a valid access token ----
+        // Prevents random visitors of the Worker URL from acting as admin.
+        const initData = request.headers.get("x-init-data") ?? "";
+        const adminTokenHeader = request.headers.get("x-admin-token") ?? "";
+        let authOk = false;
+        let authUserId: number | undefined;
+
+        if (adminTokenHeader) {
+          const { isValidAccessToken } = await import("@/lib/admin-config.server");
+          if (await isValidAccessToken(adminTokenHeader)) authOk = true;
+        }
+        if (!authOk && initData) {
+          const botToken = process.env.TELEGRAM_BOT_TOKEN;
+          if (botToken) {
+            const { verifyInitData } = await import("@/lib/telegram-initdata.server");
+            const v = verifyInitData(initData, botToken);
+            if (v.ok && v.user?.id) {
+              const { isAdminUserId } = await import("@/lib/admin-config.server");
+              if (await isAdminUserId(v.user.id)) {
+                authOk = true;
+                authUserId = v.user.id;
+              }
+            }
+          }
+        }
+        if (!authOk) return jerr(401, "not an admin (missing valid initData or access token)");
+
         let body: unknown;
         try {
           body = await request.json();
@@ -116,6 +143,7 @@ export const Route = createFileRoute("/api/public/bot/bridge")({
         if (!parsed.success) return jerr(400, parsed.error.message);
         const req = parsed.data;
         const s = sb();
+        void authUserId;
 
         const jok = (data: unknown) =>
           new Response(JSON.stringify(data), {

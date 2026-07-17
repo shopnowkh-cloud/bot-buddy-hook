@@ -547,6 +547,28 @@ export const Route = createFileRoute("/api/public/bot/bridge")({
               }
               return jok({ ok: true, sent: results.filter((r) => r.ok).length, total: results.length, results });
             }
+            case "list_updates": {
+              let q = s
+                .from("telegram_updates")
+                .select("id, update_id, update_type, chat_id, chat_title, chat_type, user_id, username, text_preview, payload, created_at")
+                .order("created_at", { ascending: false })
+                .limit(req.limit ?? 100);
+              if (req.chat_id !== undefined) q = q.eq("chat_id", req.chat_id);
+              if (req.update_type) q = q.eq("update_type", req.update_type);
+              const { data, error } = await q;
+              if (error) return jerr(500, error.message);
+              return jok({ updates: data ?? [] });
+            }
+            case "delete_update": {
+              const { error } = await s.from("telegram_updates").delete().eq("id", req.id);
+              if (error) return jerr(500, error.message);
+              return jok({ ok: true });
+            }
+            case "clear_updates": {
+              const { error } = await s.from("telegram_updates").delete().neq("id", 0);
+              if (error) return jerr(500, error.message);
+              return jok({ ok: true });
+            }
           }
         } catch (e: any) {
           return jerr(500, e?.message ?? "server error");

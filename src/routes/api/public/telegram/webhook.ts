@@ -374,7 +374,7 @@ export const MAIN_KEYBOARD = {
   keyboard: [
     ["បន្ថែមពាក្យថ្មី"],
     ["បញ្ជីពាក្យ កែប្រែ&លុប"],
-    ["⏱ កំណត់ Timer លុបសារ", "⚡ Fast-Path"],
+    ["⏱ កំណត់ Timer លុបសារ"],
     ["📅 កំណត់ពេលផ្ញើទៅ Group", "📋 បញ្ជី Schedule"],
   ],
   resize_keyboard: true,
@@ -965,19 +965,6 @@ export async function handleMessage(token: string, adminId: number, supabase: an
     return;
   }
 
-  if (text === "⚡ Fast-Path") {
-    const enabled = await loadFastPathEnabled(supabase);
-    const next = !enabled;
-    await saveFastPathEnabled(supabase, next);
-    await tgRequest(token, "sendMessage", {
-      chat_id: chatId,
-      text: next
-        ? "⚡ Fast-Path: ✅ បើក\n\nBot នឹងឆ្លើយលឿនបំផុត (round-trip តែមួយ)។\nចំណាំ: សារ bot នឹងមិនត្រូវលុបស្វ័យប្រវត្តិទេ ទោះបី Timer បើកក៏ដោយ។"
-        : "⚡ Fast-Path: ⛔ បិទ\n\nBot នឹងឆ្លើយធម្មតា (យឺតជាងបន្តិច) ប៉ុន្តែ auto-delete សារ bot នឹងដំណើរការពេញលេញ។",
-      reply_markup: MAIN_KEYBOARD,
-    });
-    return;
-  }
 
   if (text === "⏱ កំណត់ Timer លុបសារ") {
     await saveState(supabase, chatId, "setting_timer", null, null);

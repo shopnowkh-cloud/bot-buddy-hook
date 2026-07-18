@@ -1601,7 +1601,14 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               const parsedCmd = parseSlashCommand(msg.text);
               const kw = parsedCmd ? cache.commands.get(parsedCmd) : undefined;
               const match = kw ? cache.replies.get(kw.toLowerCase()) : undefined;
-              if (match) {
+              // Skip fast-path when auto-delete is active — we need the sent
+              // message_id to schedule deletion, which inline responses don't return.
+              const effDel = match
+                ? (match.delete_after_seconds ?? cache.config ?? 0)
+                : 0;
+              if (match && effDel > 0) {
+                // fall through to normal path
+              } else if (match) {
                 const chatId = msg.chat.id;
 
                 // Build a single inline payload for one reply item.

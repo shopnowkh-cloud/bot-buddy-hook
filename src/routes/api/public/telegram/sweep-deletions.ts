@@ -31,20 +31,47 @@ export const Route = createFileRoute("/api/public/telegram/sweep-deletions")({
         }
 
         const processed: number[] = [];
+        const failed: Array<{ id: number; status: number; description: string }> = [];
         for (const row of due ?? []) {
-          await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: row.chat_id, message_id: row.message_id }),
-          }).catch(() => {});
-          processed.push(row.id as number);
+          try {
+            const response = await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: row.chat_id, message_id: row.message_id }),
+            });
+            const result = (await response.json().catch(() => null)) as
+              | { ok?: boolean; description?: string }
+              | null;
+            const description = result?.description ?? `HTTP ${response.status}`;
+            const alreadyGone =
+              response.status === 400 &&
+              /message to delete not found|message can't be deleted/i.test(description);
+
+            if ((response.ok && result?.ok) || alreadyGone) {
+              processed.push(row.id as number);
+            } else {
+              failed.push({ id: row.id as number, status: response.status, description });
+            }
+          } catch (error) {
+            failed.push({
+              id: row.id as number,
+              status: 0,
+              description: error instanceof Error ? error.message : "Network error",
+            });
+          }
         }
 
         if (processed.length > 0) {
           await supabaseAdmin.from("pending_deletions").delete().in("id", processed);
         }
 
-        return new Response(JSON.stringify({ ok: true, processed: processed.length }), {
+        if (failed.length > 0) console.error("Telegram deletion failures", failed);
+
+        return new Response(JSON.stringify({
+          ok: failed.length === 0,
+          processed: processed.length,
+          failed: failed.length,
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });

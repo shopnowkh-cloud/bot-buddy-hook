@@ -1445,12 +1445,13 @@ export async function handleMessage(token: string, adminId: number, supabase: an
       const hit = await resolveCommandKeyword(supabase, cmd);
       if (hit) {
         logUsage(supabase, hit.keyword, msg);
+        const effective = await getEffectiveDeleteSeconds(supabase, hit.entry);
         await Promise.all([
           tgRequest(token, "deleteMessage", {
             chat_id: chatId,
             message_id: msg.message_id,
           }).catch(() => {}),
-          sendReplies(token, supabase, chatId, hit.entry.content, 0, MAIN_KEYBOARD),
+          sendReplies(token, supabase, chatId, hit.entry.content, effective, MAIN_KEYBOARD),
         ]);
       }
     }

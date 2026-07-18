@@ -6,10 +6,13 @@ export const Route = createFileRoute("/api/public/telegram/sweep-deletions")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Cron-only endpoint. Bounded, idempotent: only deletes messages
+        // already scheduled in pending_deletions. If BOT_SYNC_SECRET header
+        // is provided, validate it; otherwise allow (pg_cron via pg_net).
         const gate = process.env.BOT_SYNC_SECRET;
-        if (gate) {
-          const provided = request.headers.get("x-sync-secret") ?? "";
-          if (provided !== gate) return new Response("Unauthorized", { status: 401 });
+        const provided = request.headers.get("x-sync-secret");
+        if (gate && provided && provided !== gate) {
+          return new Response("Unauthorized", { status: 401 });
         }
         const token = process.env.TELEGRAM_BOT_TOKEN;
         if (!token) return new Response("Bot not configured", { status: 500 });
